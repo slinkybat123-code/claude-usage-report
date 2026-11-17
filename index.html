@@ -33,6 +33,8 @@
     p { color: var(--muted); margin: 0 auto 16px; max-width: 38ch; }
     button { font: inherit; min-height: 44px; padding: 0 20px; border-radius: 10px; border: 1px solid var(--ring); background: transparent; color: var(--ink); cursor: pointer; }
     button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .get { margin-top: 20px; font-size: 14px; }
+    .get a { color: var(--blue); }
     @media (prefers-reduced-motion: reduce) { .busy .mark i { animation: none; } }
   </style>
 </head>
@@ -43,6 +45,7 @@
       <h1>Claude Usage Report</h1>
       <p id="msg" role="status">Finding your dashboard…</p>
       <button id="retry" type="button" hidden>Try again</button>
+      <p class="get"><a href="get/">Get Claude Usage for your own PC</a></p>
     </div>
   </main>
   <iframe id="frame" hidden title="Claude Usage Report" referrerpolicy="no-referrer" allow="clipboard-write"></iframe>
