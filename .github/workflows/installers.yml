@@ -90,7 +90,7 @@ jobs:
           export HOME="$(mktemp -d)"
           STUBS="$(mktemp -d)"
           for c in launchctl open osascript; do printf '#!/bin/bash\nexit 0\n' > "$STUBS/$c"; chmod +x "$STUBS/$c"; done
-          PATH="$STUBS:$PATH" timeout 60 "$APP/Contents/MacOS/launcher" || true
+          PATH="$STUBS:$PATH" "$APP/Contents/MacOS/launcher" || true   # waits up to 30 s for a monitor the stubs never start
           PLIST="$HOME/Library/LaunchAgents/dev.usagemonitor.claude.plist"
           plutil -lint "$PLIST"
           test -f "$HOME/Library/Application Support/Claude Usage Monitor/data/finder.json"
