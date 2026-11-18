@@ -3,7 +3,7 @@
 # (hdiutil, lipo, iconutil), after: node packaging/prepare.js mac
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-VERSION="${APP_VERSION:-1.6.0}"
+VERSION="${APP_VERSION:-1.7.0}"
 NAME="Claude Usage Monitor"
 BUILD="build/mac"
 APPDIR="$BUILD/$NAME.app"

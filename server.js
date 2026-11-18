@@ -72,6 +72,15 @@ const { qrSvg } = require('./lib/qr');
 const finder = new Finder(DATA_DIR);
 const share = new Share(DATA_DIR);
 const friends = new (require('./lib/friends').Friends)(DATA_DIR);
+const cloud = new (require('./lib/cloud').Cloud)(finder);
+const ai = new (require('./lib/ai').AI)(DATA_DIR, { snapshot: () => snapshot });
+/** This PC's home folder, in every spelling it takes inside JSON; replaced by "~" in anything that leaves the PC. */
+const HOME_RE = (() => {
+  const home = os.homedir();
+  const forms = [JSON.stringify(home).slice(1, -1), home.replace(/\\/g, '/')];
+  return new RegExp(forms.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
+})();
+let remoteJson = '';
 /** The published Claude Usage Report page (data/site.json), allowed to show the remote dashboard in a frame. */
 const SITE = (() => {
   try {
@@ -135,7 +144,13 @@ async function rebuild(force = false) {
   snapshot.paths = { claudeDir: CLAUDE_DIR, projectsDir: PROJECTS_DIR, reporterDataDir: REPORTER_DATA_DIR };
   snapshot.site = SITE ? { url: SITE.url } : null;
   snapshotJson = JSON.stringify(snapshot);
+  remoteJson = snapshotJson.replace(HOME_RE, '~');
   for (const c of clients) push(c);
+  if (cloud.enabled) {
+    cloud
+      .publish({ summaryJson: JSON.stringify(summaryOf(snapshot)), snapshotJson: remoteJson })
+      .then((sent) => sent && console.log('Cloud copy: saved to your gist.'), (e) => console.log(`Cloud copy: could not save (${e.message}).`));
+  }
   if (share.on) share.publish(snapshot).catch((e) => console.log(`Share with friends: could not post (${e.message}).`));
 }
 
@@ -237,7 +252,7 @@ function push(c) {
     return;
   }
   c.lastSent = Date.now();
-  c.out.write(`event: snapshot\ndata: ${snapshotJson}\n\n`);
+  c.out.write(`event: snapshot\ndata: ${c.remote ? remoteJson : snapshotJson}\n\n`);
 }
 
 function openEvents(req, res, ctx) {
@@ -251,7 +266,7 @@ function openEvents(req, res, ctx) {
     out.pipe(res);
   }
   res.writeHead(200, headers);
-  const client = { out, lastSent: 0, timer: null, minGapMs: ctx.remote ? 3000 : 0 };
+  const client = { out, lastSent: 0, timer: null, minGapMs: ctx.remote ? 3000 : 0, remote: ctx.remote };
   clients.add(client);
   push(client);
   const ping = setInterval(() => out.write(': ping\n\n'), 20000); // keeps proxies from timing the stream out
@@ -274,7 +289,7 @@ async function serveStatic(res, pathname, ctx) {
   } catch {
     return send(res, 404, '{"error":"not found"}');
   }
-  if (ctx.remote && rel === 'index.html') body = Buffer.from(String(body).replace('<body>', '<body data-mode="remote">'));
+  if (ctx.remote && (rel === 'index.html' || rel === 'ai.html')) body = Buffer.from(String(body).replace('<body>', '<body data-mode="remote">'));
   return send(res, 200, body, { type, gzip: ctx.gzip });
 }
 
@@ -314,7 +329,8 @@ async function route(req, res, url, ctx) {
   switch (`${req.method} ${url.pathname}`) {
     case 'GET /api/snapshot': {
       const download = url.searchParams.has('download');
-      return send(res, 200, download ? JSON.stringify(snapshot, null, 2) : snapshotJson, {
+      const body = ctx.remote ? remoteJson : snapshotJson;
+      return send(res, 200, download ? JSON.stringify(JSON.parse(body), null, 2) : body, {
         gzip: ctx.gzip,
         headers: download ? { 'Content-Disposition': `attachment; filename="claude-usage-${stamp()}.json"` } : {},
       });
@@ -330,10 +346,17 @@ async function route(req, res, url, ctx) {
       return openEvents(req, res, ctx);
     case 'GET /pair':
       return serveStatic(res, '/pair.html', ctx);
+    case 'GET /ai':
+      return serveStatic(res, '/ai.html', ctx);
+    case 'GET /api/ai': {
+      // Usage reports only: keys never leave this PC, and remote viewers get "~" for the home folder.
+      const json = JSON.stringify({ ais: await ai.all() });
+      return send(res, 200, ctx.remote ? json.replace(HOME_RE, '~') : json, { gzip: ctx.gzip });
+    }
     case 'GET /api/whoami':
       return send(res, 200, JSON.stringify({ remote: ctx.remote, platform: process.platform, packaged: PACKAGED, webApp: WEB_APP, finder: finder.id, code: finder.code, site: SITE ? SITE.url : null, apkBytes: await fsp.stat(path.join(PUBLIC_DIR, 'claude-usage.apk')).then((st) => st.size, () => 0) }));
     case 'GET /report': {
-      const html = renderReport(snapshot);
+      const html = renderReport(ctx.remote ? JSON.parse(remoteJson) : snapshot);
       if (!url.searchParams.has('download')) return send(res, 200, html, { type: TYPES['.html'], gzip: ctx.gzip });
       const name = `claude-usage-report-${stamp()}.html`;
       if (!ctx.remote) {
@@ -362,6 +385,8 @@ async function route(req, res, url, ctx) {
         return send(res, 200, JSON.stringify(await reporterStatus()));
       }
       case 'POST /api/quit':
+        // Save the cloud copy before going, so phones show the latest figures while the PC is off.
+        if (cloud.enabled) await cloud.publish({ summaryJson: JSON.stringify(summaryOf(snapshot)), snapshotJson: remoteJson }, { force: true }).catch(() => {});
         send(res, 200, '{"ok":true}');
         console.log('Stopped from the dashboard.');
         setTimeout(() => {
@@ -401,6 +426,29 @@ async function route(req, res, url, ctx) {
           return send(res, 400, '{"error":"bad request"}');
         }
         return send(res, 200, JSON.stringify({ friends: friends.view() }));
+      }
+      case 'POST /api/ai/connect': {
+        let body;
+        try {
+          body = JSON.parse(await remote.readBody(req, 2048));
+        } catch {
+          return send(res, 400, '{"error":"bad request"}');
+        }
+        try {
+          await ai.connect(body.id, body.key);
+        } catch (e) {
+          return send(res, 400, JSON.stringify({ error: e.message }));
+        }
+        console.log(`All your AIs: ${body.id} added.`);
+        return send(res, 200, JSON.stringify({ ais: await ai.all() }));
+      }
+      case 'POST /api/ai/disconnect': {
+        try {
+          ai.disconnect(JSON.parse(await remote.readBody(req, 1024)).id);
+        } catch {
+          return send(res, 400, '{"error":"bad request"}');
+        }
+        return send(res, 200, JSON.stringify({ ais: await ai.all() }));
       }
       case 'GET /api/share':
         return send(res, 200, JSON.stringify(share.status()));
@@ -555,6 +603,12 @@ async function main() {
         }
         schedule(true);
       });
+      // Phones learn where the cloud copy and the offline dashboard are along with the address.
+      if (cloud.enabled) {
+        cloud.rawBase().then((base) => {
+          finder.extra = { cloud: base, ...(SITE && SITE.url && { offline: new URL('offline/', SITE.url).href }) };
+        }, (e) => console.log(`Cloud copy: off (${e.message}).`));
+      }
       tunnel.start();
       // ntfy.sh keeps a post for 12 hours: post the unchanged address again now and then.
       setInterval(() => {

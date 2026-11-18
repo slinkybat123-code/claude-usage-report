@@ -6,7 +6,9 @@
   const { esc, compact, full, usd, usd2, pct, duration, ago, clock, dateTime, shortDate, hourLabel } = C;
   const $ = (id) => document.getElementById(id);
   // The server marks the copy it serves to other devices; that copy is read-only.
-  const REMOTE = document.body.dataset.mode === 'remote';
+  // The offline dashboard (cloud copy) behaves like a remote viewer: read-only.
+  const OFFLINE = window.CLOUD_COPY || null;
+  const REMOTE = document.body.dataset.mode === 'remote' || Boolean(OFFLINE);
   const CALM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const store = {
@@ -140,7 +142,26 @@
     $('live').classList.toggle('on', on);
     $('live').lastElementChild.textContent = text;
   }
+  /** Offline dashboard: draws the last copy your PC saved, and checks for a newer one every 2 minutes. */
+  async function loadCloudCopy() {
+    try {
+      const r = await fetch(`${OFFLINE}claude-usage-snapshot.json?t=${Math.floor(Date.now() / 120000)}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      snap = await r.json();
+      receivedAt = Date.now();
+      render();
+      const at = new Date(snap.generatedAt);
+      setLive(false, `Last copy · ${at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
+      const note = $('offline-note');
+      if (note) note.textContent = `Your computer is off or asleep, so this is the last copy it saved, from ${at.toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. It updates by itself when the computer is back.`;
+    } catch (e) {
+      setLive(false, 'No copy yet');
+    }
+    setTimeout(loadCloudCopy, 120000);
+  }
+
   function connect() {
+    if (OFFLINE) return loadCloudCopy();
     const es = new EventSource('/api/events');
     es.addEventListener('snapshot', (ev) => {
       snap = JSON.parse(ev.data);
@@ -476,7 +497,7 @@
     const P = snap.pricing;
     $('footer').innerHTML = `<span>${full(d.files)} transcript files · ${full(d.responses)} API responses · ${full(d.duplicateLines)} duplicate lines skipped${d.unreadableLines ? ` · ${full(d.unreadableLines)} unreadable` : ''}</span>
       <span>Reading <code>${esc(snap.paths.projectsDir)}</code></span>
-      <span class="no-print"><a href="/api/snapshot?download=1">Download JSON</a> · <a href="/report?download=1">Download report</a></span>
+      <span class="no-print no-offline"><a href="/api/snapshot?download=1">Download JSON</a> · <a href="/report?download=1">Download report</a></span>
       ${R.installed && !REMOTE ? '<span class="no-print"><button type="button" data-action="uninstall">Remove reporter</button></span>' : ''}
       <details class="prices" data-table="prices"${openTables.has('prices') ? ' open' : ''}><summary>Prices used for the dollar figures (per million tokens, as of ${esc(P.asOf)})</summary>
         <div class="table-wrap"><table><thead><tr><th>Model</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache read</th><th class="num">Cache write 5 min</th><th class="num">Cache write 1 h</th></tr></thead><tbody>${P.models

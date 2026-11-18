@@ -21,11 +21,13 @@
       </div>
       <span class="spacer"></span>
       <span class="live" id="live"><i></i><span>Connecting</span></span>
-      <a class="btn primary" href="/report" target="_blank" rel="noopener">Diagnostic report</a>
+      <a class="btn ai-link no-offline" id="ai-link" href="/ai"><span class="ai-link-dots" aria-hidden="true"><i></i><i></i><i></i></span>All your AIs</a>
+      <a class="btn primary no-offline" href="/report" target="_blank" rel="noopener">Diagnostic report</a>
       <button type="button" id="theme" aria-label="Switch color theme">Theme: system</button>
       <button type="button" class="remote-only" data-action="signout">Sign out</button>
     </header>
 
+    <p class="offline-note" id="offline-note" role="status"></p>
     <section class="card spend" id="spend" aria-label="Spend"></section>
 
     <div class="grid cols-limits" id="limits" style="margin-top:16px"></div>

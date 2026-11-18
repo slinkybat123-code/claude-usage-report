@@ -4,7 +4,7 @@
 ; Installs for the current user only (no administrator rights), with its own Node.js and cloudflared.
 
 #ifndef AppVersion
-  #define AppVersion "1.6.0"
+  #define AppVersion "1.7.0"
 #endif
 
 [Setup]

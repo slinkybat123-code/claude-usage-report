@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>All your AIs · Claude Usage Monitor</title>
+  <link rel="icon" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="style.css">
+  <script src="mode.js"></script>
+</head>
+<body>
+  <div class="wrap ai-page">
+    <header class="top">
+      <div>
+        <h1>All your AIs</h1>
+        <div class="sub" id="ai-sub">The same report for every AI you use</div>
+      </div>
+      <span class="spacer"></span>
+      <span class="live" id="live"><i></i><span>Loading</span></span>
+      <a class="btn" id="back" href="/">Claude Code dashboard</a>
+    </header>
+
+    <section class="card ai-overview" id="ai-overview" aria-label="Every AI together"></section>
+
+    <div class="ai-tabs-wrap">
+      <div class="ai-tabs" id="ai-tabs" role="tablist" aria-label="Your AIs"><span class="ai-ink" id="ai-ink" aria-hidden="true"></span></div>
+    </div>
+    <section class="ai-panel" id="ai-panel" role="tabpanel" aria-live="polite"></section>
+  </div>
+  <div class="tooltip" id="tooltip" hidden></div>
+  <script src="charts.js"></script>
+  <script src="ai.js"></script>
+</body>
+</html>
