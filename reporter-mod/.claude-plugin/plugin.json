@@ -1,0 +1,18 @@
+{
+  "name": "plan-usage-reporter",
+  "version": "1.0.0",
+  "description": "Writes each session's plan-limit readings (5-hour and weekly percent used, reset times), context fill and /cost total to ~/.claude/usage-monitor for Claude Usage Monitor. Observe-only.",
+  "author": {
+    "name": "Claude Usage Monitor"
+  },
+  "license": "MIT",
+  "keywords": ["mod", "usage", "observability"],
+  "userConfig": {
+    "dataDir": {
+      "type": "directory",
+      "title": "Data folder",
+      "description": "Where to write the readings. Empty means <CLAUDE_CONFIG_DIR or ~/.claude>/usage-monitor.",
+      "default": ""
+    }
+  }
+}

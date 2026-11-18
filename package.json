@@ -1,0 +1,20 @@
+{
+  "name": "claude-usage-monitor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live dashboard of Claude Code token usage and plan limits, on this PC or your phone, with an exportable diagnostic report.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js --open",
+    "serve": "node server.js",
+    "remote": "node server.js --tunnel tailscale --open",
+    "remote:funnel": "node server.js --tunnel tailscale-funnel --open",
+    "remote:cloudflare": "node server.js --tunnel cloudflare --open",
+    "icons": "node scripts/make-icons.js",
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

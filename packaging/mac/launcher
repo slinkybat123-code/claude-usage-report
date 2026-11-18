@@ -1,0 +1,53 @@
+#!/bin/bash
+# Claude Usage Monitor.app: opening the app makes sure the monitor runs (and starts at
+# every login, as a LaunchAgent), then opens the dashboard in your browser.
+RES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+APP="$RES/app"
+NODE="$RES/node/node"
+SUPPORT="$HOME/Library/Application Support/Claude Usage Monitor"
+LABEL="dev.usagemonitor.claude"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+mkdir -p "$SUPPORT/data" "$HOME/Library/LaunchAgents"
+
+up() { /usr/bin/curl -fs -m 1 http://localhost:4747/api/whoami >/dev/null 2>&1; }
+xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+if ! up; then
+  # Written each time so it follows the app if you move it.
+  cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$(xml "$NODE")</string>
+    <string>$(xml "$APP/server.js")</string>
+    <string>--tunnel</string><string>cloudflare</string><string>--no-sign-in</string>
+  </array>
+  <key>WorkingDirectory</key><string>$(xml "$APP")</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>USAGE_MONITOR_DATA_DIR</key><string>$(xml "$SUPPORT/data")</string>
+    <key>USAGE_MONITOR_REPORTS_DIR</key><string>$(xml "$SUPPORT/reports")</string>
+    <key>CLAUDE_USAGE_PACKAGED</key><string>mac-app</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>$(xml "$SUPPORT/monitor.log")</string>
+  <key>StandardErrorPath</key><string>$(xml "$SUPPORT/monitor.log")</string>
+</dict>
+</plist>
+EOF
+  # This computer's pairing code (kept if it already has one).
+  USAGE_MONITOR_DATA_DIR="$SUPPORT/data" "$NODE" "$APP/scripts/setup-address-finder.js" >/dev/null 2>&1
+  launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1
+  launchctl bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl load -w "$PLIST" >/dev/null 2>&1
+  for _ in $(seq 1 60); do up && break; sleep 0.5; done
+fi
+
+if up; then
+  open "http://localhost:4747"
+else
+  osascript -e 'display alert "Claude Usage Monitor did not start" message "Look at ~/Library/Application Support/Claude Usage Monitor/monitor.log, or open the app again."' >/dev/null 2>&1
+fi

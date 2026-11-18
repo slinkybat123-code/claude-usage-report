@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pair your phone · Claude Usage</title>
+  <link rel="icon" href="icon-192.png">
+  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+</head>
+<body>
+  <main class="pairpage">
+    <div class="pp-mark" aria-hidden="true"><i></i><i></i><i></i></div>
+    <h1>Pair your phone</h1>
+    <p class="lede">Get the Claude Usage app, then connect it to this computer. You only do this once; the app finds the computer by itself after that.</p>
+    <div class="pp-code" id="code" hidden></div>
+    <ol class="pp-steps" id="ios-steps" hidden>
+      <li><span>1</span><div><b>Open the iPhone app</b><p>It opens in Safari, already connected to this computer.</p><a class="btn primary" id="ios-open" href="#">Open Claude Usage</a></div></li>
+      <li><span>2</span><div><b>Add it to your home screen</b><p>In Safari, tap Share, then Add to Home Screen. It opens like an app from then on.</p></div></li>
+    </ol>
+    <ol class="pp-steps" id="android-steps">
+      <li><span>1</span><div><b>Get the app</b><p>Android asks once to let your browser install apps; allow it.</p><a class="btn" id="download" href="/claude-usage.apk" download>Download the app</a></div></li>
+      <li><span>2</span><div><b>Connect it</b><p>Opens the app with everything filled in.</p><a class="btn primary" id="connect" href="#">Connect the app</a></div></li>
+    </ol>
+    <p class="note" id="desktop-note" hidden>This page is meant for your phone. Scan the QR code on your computer's dashboard with the phone camera.</p>
+    <p class="note"><a href="/">Open the full dashboard</a></p>
+  </main>
+  <script src="charts.js"></script>
+  <script src="pair.js"></script>
+</body>
+</html>

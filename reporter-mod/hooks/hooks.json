@@ -1,0 +1,6 @@
+{
+  "description": "Writes plan-limit readings, context fill and /cost per session for Claude Usage Monitor.",
+  "modules": [
+    "./usage-reporter.ts"
+  ]
+}

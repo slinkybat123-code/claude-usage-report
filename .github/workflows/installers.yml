@@ -1,0 +1,117 @@
+name: installers
+# Builds ClaudeUsageSetup.exe (Windows) and ClaudeUsageMonitor.dmg (macOS) and tries each one.
+on:
+  push:
+    branches: [build]
+permissions:
+  contents: read
+env:
+  APP_VERSION: "1.6.0"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Bundle Node.js and cloudflared (checksums verified)
+        run: node packaging/prepare.js windows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' }
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null; $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' }
+          & $iscc "/DAppVersion=$env:APP_VERSION" packaging\windows\ClaudeUsage.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item dist\ClaudeUsageSetup.exe | Format-List Name, Length
+      - name: Try it (install, start, ask, uninstall)
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'cum'
+          Start-Process dist\ClaudeUsageSetup.exe -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=""', "/DIR=$dir" -Wait
+          foreach ($f in 'node\node.exe', 'tools\cloudflared.exe', 'server.js', 'desktop\launch.vbs', 'data\finder.json', 'unins000.exe') {
+            if (-not (Test-Path (Join-Path $dir $f))) { throw "missing after install: $f" }
+          }
+          & "$dir\node\node.exe" -v
+          & "$dir\tools\cloudflared.exe" --version
+          $cfg = Join-Path $env:RUNNER_TEMP 'claude'
+          New-Item -ItemType Directory -Force (Join-Path $cfg 'projects') | Out-Null
+          $env:CLAUDE_CONFIG_DIR = $cfg
+          $p = Start-Process "$dir\node\node.exe" -ArgumentList "`"$dir\server.js`"", '--port', '5990' -WorkingDirectory $dir -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 6
+          $w = Invoke-RestMethod http://localhost:5990/api/whoami
+          if ($w.packaged -ne 'win-exe') { throw "packaged = $($w.packaged)" }
+          $page = Invoke-WebRequest -UseBasicParsing http://localhost:5990/
+          if ($page.Content -notmatch 'Just for fun') { throw 'dashboard page not served' }
+          Stop-Process -Id $p.Id -Force
+          Start-Process (Join-Path $dir 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path (Join-Path $dir 'server.js')) { throw 'uninstall left the app behind' }
+          if (-not (Test-Path (Join-Path $dir 'data\finder.json'))) { throw 'uninstall removed the pairing code' }
+          'install, start and uninstall all worked'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/ClaudeUsageSetup.exe
+          retention-days: 2
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Bundle Node.js and cloudflared (checksums verified)
+        run: node packaging/prepare.js mac
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Build the app and disk image
+        run: bash packaging/mac/build-app.sh
+      - name: Try it
+        run: |
+          set -euo pipefail
+          APP="build/mac/Claude Usage Monitor.app"
+          NODE="$APP/Contents/Resources/node/node"
+          lipo -archs "$NODE"
+          lipo -archs "$APP/Contents/Resources/app/tools/cloudflared"
+          "$NODE" -v
+          "$APP/Contents/Resources/app/tools/cloudflared" --version
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then arch -x86_64 "$NODE" -v; else echo "no Rosetta here; Intel half not run"; fi
+          plutil -lint "$APP/Contents/Info.plist"
+          bash -n "$APP/Contents/MacOS/launcher"
+          # Run the real launcher with stand-ins for launchctl/open/osascript, then start the
+          # monitor exactly as the LaunchAgent it wrote would.
+          export HOME="$(mktemp -d)"
+          STUBS="$(mktemp -d)"
+          for c in launchctl open osascript; do printf '#!/bin/bash\nexit 0\n' > "$STUBS/$c"; chmod +x "$STUBS/$c"; done
+          PATH="$STUBS:$PATH" timeout 60 "$APP/Contents/MacOS/launcher" || true
+          PLIST="$HOME/Library/LaunchAgents/dev.usagemonitor.claude.plist"
+          plutil -lint "$PLIST"
+          test -f "$HOME/Library/Application Support/Claude Usage Monitor/data/finder.json"
+          export CLAUDE_CONFIG_DIR="$(mktemp -d)"; mkdir -p "$CLAUDE_CONFIG_DIR/projects"
+          export USAGE_MONITOR_DATA_DIR="$(plutil -extract EnvironmentVariables.USAGE_MONITOR_DATA_DIR raw "$PLIST")"
+          export CLAUDE_USAGE_PACKAGED=mac-app
+          "$(plutil -extract ProgramArguments.0 raw "$PLIST")" "$(plutil -extract ProgramArguments.1 raw "$PLIST")" --port 5990 &
+          PID=$!
+          sleep 6
+          curl -fs http://localhost:5990/api/whoami | tee /dev/stderr | grep -q '"packaged":"mac-app"'
+          curl -fs http://localhost:5990/ | grep -q 'Just for fun'
+          kill $PID
+          MNT="$(mktemp -d)"
+          hdiutil attach dist/ClaudeUsageMonitor.dmg -nobrowse -readonly -mountpoint "$MNT"
+          ls -la "$MNT"
+          test -d "$MNT/Claude Usage Monitor.app"
+          hdiutil detach "$MNT"
+          ls -la dist/ClaudeUsageMonitor.dmg
+          echo "app, launcher, LaunchAgent and disk image all worked"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: dist/ClaudeUsageMonitor.dmg
+          retention-days: 2
