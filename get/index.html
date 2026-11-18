@@ -21,7 +21,8 @@
     .mark i:nth-child(1) { height: 18px; } .mark i:nth-child(2) { height: 28px; } .mark i:nth-child(3) { height: 40px; background: var(--orange); }
     h1 { font-size: clamp(30px, 6vw, 42px); line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 12px; font-weight: 700; }
     .lede { font-size: 18px; color: var(--ink-2); margin: 0 0 32px; max-width: 54ch; }
-    .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 40px; }
+    .downloads { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-bottom: 28px; }
+    .group { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
     .dl { background: var(--surface); border: 1px solid var(--ring); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; gap: 6px; }
     .dl h2 { font-size: 18px; margin: 0; }
     .dl p { margin: 0 0 12px; color: var(--muted); font-size: 14px; flex: 1; }
@@ -44,31 +45,46 @@
     <h1>Claude Usage</h1>
     <p class="lede">A live dashboard of your own Claude Code usage: what every chat costs, your plan limits, and what kind of work burns the most, on your PC and your phone.</p>
 
+    <p class="group">On the computer where you use Claude Code</p>
     <div class="downloads">
       <section class="dl">
-        <h2>Windows PC</h2>
-        <p>The monitor and dashboard. Windows 10 or 11, on the PC where you use Claude Code. About 10 MB.</p>
+        <h2>Windows</h2>
+        <p>The monitor and dashboard. Windows 10 or 11. About 10 MB.</p>
         <a class="btn" href="https://github.com/slinkybat123-code/claude-usage-report/releases/latest/download/ClaudeUsageMonitor.zip">Download for Windows</a>
       </section>
       <section class="dl">
-        <h2>Android phone</h2>
+        <h2>Mac</h2>
+        <p>The monitor and dashboard. macOS on Apple silicon or Intel. About 10 MB.</p>
+        <a class="btn" href="https://github.com/slinkybat123-code/claude-usage-report/releases/latest/download/ClaudeUsageMonitor-Mac.zip">Download for Mac</a>
+      </section>
+    </div>
+    <p class="group">On your phone</p>
+    <div class="downloads">
+      <section class="dl">
+        <h2>Android</h2>
         <p>The app, a Quick Settings tile and a home-screen widget. Android 8 or later. About 11 MB.</p>
         <a class="btn" href="https://github.com/slinkybat123-code/claude-usage-report/releases/latest/download/ClaudeUsage.apk">Download the app</a>
+      </section>
+      <section class="dl">
+        <h2>iPhone</h2>
+        <p>A web app: open it in Safari, then tap Share and Add to Home Screen. Apple only installs apps from the App Store, so there is no file to download.</p>
+        <a class="btn" href="../app/">Open the iPhone app</a>
       </section>
     </div>
 
     <h3>Set it up</h3>
     <ol class="steps">
-      <li><div>Unzip the Windows download somewhere it can stay, like Documents, and double-click <code>install.cmd</code>. It needs Node.js 20 or later and offers to install it.</div></li>
+      <li><div><b>Windows:</b> unzip the download somewhere it can stay, like Documents, and double-click <code>install.cmd</code>. <b>Mac:</b> unzip it, move the folder to Documents, then right-click <code>install.command</code> and choose Open. Both need Node.js 20 or later and help you get it.</div></li>
       <li><div>The dashboard opens in your browser. Under <b>Apps</b>, <b>Pair a phone</b> shows a QR code and a pairing code.</div></li>
-      <li><div>Scan the QR code with your phone camera, or install the app and type the code. The app finds your PC from then on.</div></li>
-      <li><div>Optional: <b>Share with friends</b> gives you a friend code, so friends can see your totals in their app's Friends tab.</div></li>
+      <li><div>Scan the QR code with your phone camera: Android offers the app, iPhone opens the web app. Or type the code in the app. It finds your computer from then on.</div></li>
+      <li><div>Friends: under <b>Friends</b> on the dashboard, <b>Share yours</b> gives you a friend code for your friends, and you can add theirs. Friends can be on any mix of Windows, Mac, Android and iPhone.</div></li>
     </ol>
 
     <h3>What to know</h3>
     <ul class="points">
       <li>No Claude password or key is ever asked for. The monitor reads Claude Code's own files on your PC, and your usage stays there.</li>
-      <li>Your PC has to be on for the phone to update. The monitor starts by itself when you sign in to Windows.</li>
+      <li>Your computer has to be on for the phone to update. The monitor starts by itself when you sign in.</li>
+      <li>On iPhone the web app shows your figures, chats and friends; Apple does not let web apps add home-screen widgets.</li>
       <li>Anyone with your dashboard's address or pairing code can see your dashboard, chat titles included. Keep them to yourself.</li>
       <li>Sharing with friends is off until you turn it on, shows only totals and limits, and stops whenever you choose.</li>
       <li>The app is signed with a development key, so Android asks you to confirm the install.</li>
