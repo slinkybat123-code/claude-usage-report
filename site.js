@@ -73,9 +73,23 @@
     }
     if (!a.url) return say('The monitor on your PC has not gone online yet.', true);
     if (!(await answers(a.url))) {
+      // The PC is off or asleep: show the last copy it saved, and keep checking for it to come back.
+      if ((window.SITE || {}).cloud) return showCopy();
       return say('Your PC is off or the monitor is not running. It last came online ' + since(a.at) + '.', true);
     }
     show(a.url);
+  }
+
+  function showCopy() {
+    var src = 'offline/#cloud=' + encodeURIComponent(window.SITE.cloud);
+    if (current !== src) {
+      current = src;
+      frame.src = src;
+    }
+    state.hidden = true;
+    frame.hidden = false;
+    clearTimeout(again);
+    again = setTimeout(find, 90000); // switch back to live once the PC answers
   }
 
   function show(url) {
@@ -92,7 +106,7 @@
   // While the dashboard is showing, check once a minute that it still answers;
   // after two misses the monitor has probably restarted, so look it up again.
   setInterval(async function () {
-    if (!current || frame.hidden || document.hidden) return;
+    if (!current || frame.hidden || document.hidden || current.indexOf('offline/') === 0) return;
     if (await answers(current)) {
       misses = 0;
       return;

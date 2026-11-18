@@ -1,0 +1,715 @@
+/* Live dashboard: renders each snapshot the server pushes over SSE, and
+   animates from what was on screen to the new values. */
+(function () {
+  'use strict';
+  const C = window.Charts;
+  const { esc, compact, full, usd, usd2, pct, duration, ago, clock, dateTime, shortDate, hourLabel } = C;
+  const $ = (id) => document.getElementById(id);
+  // The server marks the copy it serves to other devices; that copy is read-only.
+  // The offline dashboard (cloud copy) behaves like a remote viewer: read-only.
+  const OFFLINE = window.CLOUD_COPY || null;
+  const REMOTE = document.body.dataset.mode === 'remote' || Boolean(OFFLINE);
+  const CALM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window */ } },
+  };
+
+  let snap = null;
+  let receivedAt = 0;
+  let booted = false;
+  let metric = ['cost', 'tokens', 'nocache'].includes(store.get('metric')) ? store.get('metric') : 'cost';
+  let workRange = store.get('workRange') === 'week' ? 'week' : 'all';
+  const openTables = new Set(); // data tables the viewer opened survive re-renders
+  document.addEventListener('toggle', (ev) => {
+    const id = ev.target.getAttribute && ev.target.getAttribute('data-table');
+    if (id) ev.target.open ? openTables.add(id) : openTables.delete(id);
+  }, true);
+  const ALL_KEYS = ['cacheRead', 'cacheWrite', 'input', 'output'];
+  const COST_FIELD = { cacheRead: 'costCacheRead', cacheWrite: 'costCacheWrite', input: 'costInput', output: 'costOutput' };
+  const keys = () => (metric === 'nocache' ? ALL_KEYS.slice(1) : ALL_KEYS);
+  const valueOf = (row, k) => (metric === 'cost' ? row[COST_FIELD[k]] : row[k]) || 0;
+  const show = (v) => (metric === 'cost' ? usd(v) : full(v));
+  const axisUsd = (v) => (v >= 1000 ? `$${+(v / 1000).toFixed(1)}K` : `$${+v.toFixed(2)}`);
+
+  // ---------- motion: numbers count, bars glide, rows trade places ----------
+  const shown = new Map(); // key -> number currently on screen
+  const widths = new Map(); // key -> bar size currently on screen
+  const tweens = new Map();
+  const targets = new Map(); // key -> last value the data asked for
+  const FMT = {
+    hero: (n) => { const [d, c] = usd2(n).split('.'); return `${d}<span class="cents">.${c}</span>`; },
+    usd, usd2, compact, int: full,
+    pct: (n) => `${Math.round(n)}%`,
+    dec1: (n) => n.toLocaleString('en-US', { maximumFractionDigits: 1, minimumFractionDigits: n < 100 ? 1 : 0 }),
+    dur: (min) => spanOf(min),
+  };
+  /** Minutes as calendar time: "45 min", "30 hours", "30 days", "7 months", "2.1 years". */
+  function spanOf(min) {
+    const one = (n, unit) => `${n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 1 : 0 })} ${unit}${n === 1 ? '' : 's'}`;
+    if (min < 90) return `${Math.round(min)} min`;
+    if (min < 48 * 60) return one(Math.round(min / 60), 'hour');
+    if (min < 61 * 1440) return one(Math.round(min / 1440), 'day');
+    if (min < 24 * 30.44 * 1440) return one(Math.round(min / (30.44 * 1440)), 'month');
+    return one(Math.round((min / (365.25 * 1440)) * 10) / 10, 'year');
+  }
+  const start = (k, v) => (shown.has(k) ? shown.get(k) : booted ? v : 0);
+  /** A number that counts from its last shown value to `v`. */
+  const num = (k, v, f = 'usd', cls = '') => `<span class="num ${cls}" data-k="${esc(k)}" data-n="${v}" data-f="${f}">${FMT[f](start(k, v))}</span>`;
+  /** A bar that glides from its last size to `p` percent (or flex share). */
+  const fill = (k, p, prop = 'width', style = '') => {
+    const from = widths.has(k) ? widths.get(k) : 0;
+    return `<span class="fill-anim${prop === 'width' ? ' fill' : ''}" data-k="${esc(k)}" data-w="${p}" data-p="${prop}" style="${prop === 'width' ? `width:${from}%` : `flex-grow:${from}`};${style}"></span>`;
+  };
+
+  function animate() {
+    document.querySelectorAll('[data-n]').forEach((el) => {
+      const k = el.dataset.k;
+      const f = FMT[el.dataset.f];
+      const to = Number(el.dataset.n);
+      const from = start(k, to);
+      const rose = targets.has(k) && to > targets.get(k); // the figure itself went up, not just a count-up catching up
+      targets.set(k, to);
+      cancelAnimationFrame(tweens.get(k));
+      if (CALM || from === to) {
+        shown.set(k, to);
+        el.innerHTML = f(to);
+        return;
+      }
+      if (rose) el.classList.add('up');
+      const t0 = performance.now();
+      const dur = booted ? 700 : 1100;
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const v = from + (to - from) * (1 - Math.pow(1 - p, 4));
+        shown.set(k, p === 1 ? to : v);
+        if (el.isConnected) el.innerHTML = f(p === 1 ? to : v);
+        if (p < 1) tweens.set(k, requestAnimationFrame(step));
+      };
+      tweens.set(k, requestAnimationFrame(step));
+    });
+    // Two frames so the starting size is painted before the transition begins.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.querySelectorAll('[data-w]').forEach((el) => {
+        const w = Number(el.dataset.w);
+        widths.set(el.dataset.k, w);
+        if (el.dataset.p === 'width') el.style.width = `${w}%`;
+        else el.style.flexGrow = w;
+      });
+    }));
+  }
+
+  /** The page zoom that fits the dashboard to a desktop window (1 elsewhere). */
+  const zoomOf = () => parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+
+  /** FLIP: rows that changed rank slide to their new place. */
+  function reorder(list, html) {
+    const before = new Map([...list.children].map((el) => [el.dataset.id, el.getBoundingClientRect().top]));
+    list.innerHTML = html;
+    if (CALM || !before.size) return;
+    [...list.children].forEach((el) => {
+      const old = before.get(el.dataset.id);
+      if (old == null) return el.classList.add('new');
+      const dy = (old - el.getBoundingClientRect().top) / zoomOf();
+      if (!dy) return;
+      el.style.transform = `translateY(${dy}px)`;
+      el.style.transition = 'none';
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.style.transition = 'transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1)';
+        el.style.transform = '';
+      }));
+    });
+  }
+
+  // ---------- theme ----------
+  const THEMES = ['system', 'light', 'dark'];
+  let theme = THEMES.includes(store.get('theme')) ? store.get('theme') : 'system';
+  function applyTheme() {
+    if (theme === 'system') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', theme);
+    $('theme').textContent = `Theme: ${theme}`;
+  }
+  $('theme').addEventListener('click', () => {
+    theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+    store.set('theme', theme);
+    applyTheme();
+  });
+  applyTheme();
+
+  // ---------- live connection ----------
+  function setLive(on, text) {
+    $('live').classList.toggle('on', on);
+    $('live').lastElementChild.textContent = text;
+  }
+  /** Offline dashboard: draws the last copy your PC saved, and checks for a newer one every 2 minutes. */
+  async function loadCloudCopy() {
+    try {
+      const r = await fetch(`${OFFLINE}claude-usage-snapshot.json?t=${Math.floor(Date.now() / 120000)}`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      snap = await r.json();
+      receivedAt = Date.now();
+      render();
+      const at = new Date(snap.generatedAt);
+      setLive(false, `Last copy · ${at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`);
+      const note = $('offline-note');
+      if (note) note.textContent = `Your computer is off or asleep, so this is the last copy it saved, from ${at.toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. It updates by itself when the computer is back.`;
+    } catch (e) {
+      setLive(false, 'No copy yet');
+    }
+    setTimeout(loadCloudCopy, 120000);
+  }
+
+  function connect() {
+    if (OFFLINE) return loadCloudCopy();
+    const es = new EventSource('/api/events');
+    es.addEventListener('snapshot', (ev) => {
+      snap = JSON.parse(ev.data);
+      receivedAt = Date.now();
+      render();
+    });
+    es.onopen = () => setLive(true, 'Live');
+    es.onerror = () => {
+      // Network drops: EventSource retries on its own. An HTTP error (tunnel up but
+      // PC asleep, or signed out) closes it for good, so find out which and retry.
+      if (es.readyState !== EventSource.CLOSED) return setLive(false, 'Reconnecting…');
+      setLive(false, REMOTE ? 'PC not reachable, retrying' : 'Server not reachable, retrying');
+      fetch('/api/whoami', { cache: 'no-store' })
+        .then((r) => (r.status === 401 ? location.replace('/login') : setTimeout(connect, 5000)))
+        .catch(() => setTimeout(connect, 5000));
+    };
+  }
+
+  // ---------- sections ----------
+  const win = (key) => snap.windows.find((w) => w.key === key);
+  const modelName = (m) => (m || '').replace(/^claude-/, '');
+  const replies = (n) => `${full(n)} ${n === 1 ? 'reply' : 'replies'}`;
+
+  function renderSpend() {
+    const S = snap.spend;
+    const all = win('all').totals;
+    const days = snap.series.daily;
+    const values = days.map((d) => d.cost);
+    const max = Math.max(1e-9, ...values);
+    const last = values[values.length - 1];
+    const mix = ALL_KEYS.map((k) => ({ k, s: C.SERIES.find((x) => x.key === k), v: S.byType[k] }));
+    $('spend').innerHTML = `<div>
+        <div class="eyebrow">All chats combined · API value</div>
+        <div class="spend-total">${num('spend.all', S.allTime, 'hero')}</div>
+        <div class="stat-sub"><b>${num('spend.req', all.requests, 'int')}</b> replies across <b>${snap.sessions.length}</b> chats · <b>${num('spend.per', S.perRequest, 'usd2')}</b> per reply</div>
+        <p class="fine">Priced at Anthropic's API list rates, the way /cost does it. On a subscription plan you pay your plan price, not this.</p>
+      </div>
+      <dl class="kpis">
+        <div><dt>Today</dt><dd>${num('spend.today', S.today)}<small>${replies(win('today').totals.requests)}</small></dd></div>
+        <div><dt>${esc(win('week').label)}</dt><dd>${num('spend.week', S.week)}<small>${replies(win('week').totals.requests)}</small></dd></div>
+        <div><dt>Last hour</dt><dd>${num('spend.hour', S.lastHour)}<small>${snap.activeSessions} chat${snap.activeSessions === 1 ? '' : 's'} active now</small></dd></div>
+        <div><dt>Next 30 days at this pace</dt><dd>${num('spend.proj', S.projected30Days)}<small>${usd(S.dailyAverage)} a day, 7-day average</small></dd></div>
+      </dl>
+      <div class="spend-trend" data-spark>
+        <div class="cap"><span>Cost per day, last 30 days</span><span>${S.topDay ? `Peak ${usd(S.topDay.cost)} on ${shortDate(S.topDay.t)}` : ''}</span></div>
+        <div class="spark-box">${C.sparkArea(values, { title: 'Cost per day, last 30 days' })}
+        <span class="spark-dot" style="left:${(954 / 960) * 100}%;top:${((90 - (last / max) * 80) / 96) * 100}%"></span></div>
+      </div>
+      <div class="spend-mix">
+        <div class="mix" role="img" aria-label="Spend by token type">${mix.filter((m) => m.v > 0).map((m) => fill(`mix.${m.k}`, m.v, 'flexGrow', `background:${m.s.color}`)).join('')}</div>
+        <div class="mix-legend">${mix.map((m) => `<span><i style="background:${m.s.color}"></i>${esc(m.s.label)} <b>${usd(m.v)}</b> · ${pct(m.v, S.allTime)}%</span>`).join('')}</div>
+      </div>`;
+  }
+
+  function renderLimits() {
+    const L = snap.limits;
+    const R = snap.reporter;
+    const five = L.windows.find((w) => w.kind === 'five_hour');
+    const others = L.windows.filter((w) => w.kind !== 'five_hour');
+    const cards = [];
+
+    if (five) {
+      cards.push(`<div class="card"><h2>${esc(five.label)}</h2><p class="desc">Plan usage, as /usage shows it</p>
+        <div class="hero">${num('lim.five', five.percentUsed, 'int')}<small>%</small></div>${C.meter(five.percentUsed)}
+        <div class="limit-row"><span>Resets in <b data-until="${esc(five.resetsAt)}">${resetIn(five.resetsAt)}</b></span><span>${five.resetsAt ? `at ${clock(Date.parse(five.resetsAt))}` : ''}</span></div>
+        ${projectionLine(five)}</div>`);
+    } else {
+      const t = win('fiveHour').totals;
+      const gone = (L.expired || []).find((w) => w.kind === 'five_hour');
+      cards.push(`<div class="card"><h2>Last 5 hours</h2><p class="desc">All chats</p>
+        <div class="hero">${num('five.cost', t.cost)}</div>
+        <div class="stat-sub"><b>${num('five.tok', t.total, 'compact')}</b> tokens · <b>${full(t.requests)}</b> replies</div>
+        ${gone ? `<div class="note">The 5-hour limit reset at ${clock(Date.parse(gone.resetsAt))}. Its new % shows after your next reply.</div>` : ''}</div>`);
+    }
+
+    for (const w of others) {
+      cards.push(`<div class="card"><h2>${esc(w.label)}</h2><p class="desc">Plan usage</p>
+        <div class="limit-pct">${num(`lim.${w.kind}`, w.percentUsed, 'pct')}</div>${C.meter(w.percentUsed)}
+        <div class="limit-row"><span>Resets in <b data-until="${esc(w.resetsAt)}">${resetIn(w.resetsAt)}</b></span><span>${w.resetsAt ? dateTime(Date.parse(w.resetsAt)) : ''}</span></div>
+        ${projectionLine(w)}</div>`);
+    }
+
+    // Status card: where the limit figures come from.
+    let body;
+    if (!R.installed) {
+      body = `<div class="callout"><p>${L.connected ? 'These readings stop updating without the reporter. ' : ''}Plan limits are not in Claude Code's log files. The <b>plan-usage-reporter</b> mod writes them after each reply.</p>
+        ${REMOTE ? '<p>Install it from the dashboard on your PC.</p>' : '<button class="primary no-print" type="button" data-action="install">Install reporter</button>'}</div>`;
+    } else if (!L.connected) {
+      body = `<div class="callout"><p>Reporter installed. Readings appear after the next reply in a session started since then.</p><p>Sessions that were already running need a restart to load it.</p></div>`;
+    } else {
+      body = `<div class="stat-label">Last reading</div><div class="stat-value mid" data-ago="${L.readAt}">${ago(L.readAt, Date.now())}</div>
+        <div class="stat-sub"><b>${L.sessionsReporting}</b> session${L.sessionsReporting === 1 ? '' : 's'} reporting${L.stale ? ' · <b>stale</b>' : ''}</div>
+        ${R.updateAvailable && !REMOTE ? '<button class="no-print" type="button" data-action="install" style="margin-top:10px">Update reporter</button>' : ''}`;
+    }
+    cards.push(`<div class="card"><h2>Limit data</h2><p class="desc">${R.installed ? `plan-usage-reporter ${esc(R.installedVersion)}` : 'Reporter not installed'}</p>${body}</div>`);
+    while (cards.length < 3) cards.push('<div class="card" aria-hidden="true"></div>');
+    $('limits').innerHTML = cards.join('');
+  }
+
+  function resetIn(iso) {
+    return iso ? duration(Date.parse(iso) - Date.now()) : '—';
+  }
+  function projectionLine(w) {
+    const p = w.projection;
+    if (!p) return '<div class="note">Pace: not enough readings yet</div>';
+    const warn = p.runsOutBeforeReset;
+    return `<div class="note">Pace: +${p.percentPerHour}%/h · ${warn ? `<b>runs out ~${clock(p.etaAt)}</b>, before reset` : 'lasts until reset'}</div>`;
+  }
+
+  function renderBoard() {
+    const rows = snap.leaderboard.filter((r) => r.cost > 0);
+    const top = rows.length ? rows[0].cost : 1;
+    $('board-desc').textContent = `Top ${rows.length} of ${snap.sessions.length}, all time, at API prices`;
+    reorder($('board'), rows.length
+      ? rows.map((r) => `<li data-id="${esc(r.id)}">
+          <span class="rank">${r.rank}</span>
+          <div class="b-main"><div class="b-title" title="${esc(r.title)}"><span class="dot${r.active ? ' on' : ''}" title="${r.active ? 'Active now' : 'Idle'}"></span>${esc(r.title)}</div>
+            <div class="b-meta">${esc(r.project)} · ${esc(modelName(r.model))} · ${replies(r.requests)}</div>${lastLine(r.id, r.last)}</div>
+          <div class="b-cost">${num(`b.${r.id}`, r.cost)}<small>${r.costToday > 0.005 ? `+${usd(r.costToday)} today` : `${Math.round(r.share * 100)}% of all`}</small></div>
+          <div class="track">${fill(`bw.${r.id}`, Math.max(1, (r.cost / top) * 100))}</div></li>`).join('')
+      : '<li class="empty">No usage yet.</li>');
+  }
+
+  // ---------- each chat's last message ----------
+  // A new message fades in word by word while the one before it drifts up and
+  // fades away; older messages fade back as they age. Renders that land while
+  // a change is still animating pick up where it is (negative delay), so live
+  // updates never restart it.
+  const SEEN = new Map(); // key -> { ts, old, changedAt }
+  const SWAP_MS = 2600;
+  const HOUR_MS = 3600e3;
+  const whoLabel = (w) => (w === 'you' ? 'You' : w === 'notice' ? 'Notice' : 'Claude');
+  const plain = (m) => `<span class="lm-who ${m.who}">${whoLabel(m.who)}</span><span class="lm-text">${esc(m.text)}</span>`;
+  function lastLine(key, m) {
+    if (!m || !m.text) return '';
+    const now = Date.now();
+    let seen = SEEN.get(key);
+    if (!seen || seen.ts !== m.ts) {
+      seen = { ts: m.ts, old: seen ? seen.html : null, changedAt: seen && booted && !CALM ? now : 0, html: plain(m) };
+      SEEN.set(key, seen);
+    }
+    const age = Math.max(0, now - (m.ts || now));
+    const fade = Math.max(0.5, 1 - age / (8 * HOUR_MS)).toFixed(2); // a day-old line sits quieter than a fresh one
+    const since = now - seen.changedAt;
+    const label = `${whoLabel(m.who)}, ${ago(m.ts, now)}: ${m.text}`;
+    if (!seen.changedAt || since > SWAP_MS) {
+      return `<div class="lastmsg" style="--age:${fade}" title="${esc(label)}">${seen.html}</div>`;
+    }
+    const words = esc(m.text).split(' ');
+    const head = words.slice(0, 28).map((w, i) => `<span class="w" style="--w:${i}">${w}</span>`).join(' ');
+    const tail = words.length > 28 ? ` <span class="w" style="--w:28">${words.slice(28).join(' ')}</span>` : '';
+    return `<div class="lastmsg swap" style="--age:${fade};--t:-${since}ms" title="${esc(label)}">${seen.old ? `<div class="lm-old" aria-hidden="true">${seen.old}</div>` : ''}<div class="lm-new"><span class="lm-who ${m.who}">${whoLabel(m.who)}</span><span class="lm-text">${head}${tail}</span></div></div>`;
+  }
+
+  /** Label, cost and bar rows shared by the work, model and project lists. */
+  function costRows(prefix, items, whole) {
+    const top = Math.max(1e-9, ...items.map((d) => d.cost));
+    return items.length
+      ? items.map((d) => `<li data-id="${esc(d.id)}">
+          <div class="b-main"><div class="b-title" title="${esc(d.title || d.label)}">${esc(d.label)}</div><div class="b-meta">${esc(d.meta)}</div></div>
+          <div class="b-cost">${num(`${prefix}.${d.id}`, d.cost)}<small>${pct(d.cost, whole)}% of spend</small></div>
+          <div class="track">${fill(`${prefix}w.${d.id}`, Math.max(1, (d.cost / top) * 100))}</div></li>`).join('')
+      : '<li class="empty">Nothing in this period yet.</li>';
+  }
+
+  function renderWork() {
+    $('work-range').innerHTML = [['all', 'All time'], ['week', 'This week']]
+      .map(([k, label]) => `<button type="button" data-action="work-${k}" aria-pressed="${workRange === k}">${label}</button>`).join('');
+    const rows = snap.work[workRange].filter((w) => w.cost > 0);
+    const whole = rows.reduce((s, w) => s + w.cost, 0);
+    reorder($('work'), costRows(`w.${workRange}`, rows.map((w) => ({
+      id: w.key, label: w.label, cost: w.cost,
+      meta: `${replies(w.requests)} · ${usd2(w.cost / Math.max(1, w.requests))} each · ${compact(w.total)} tokens`,
+    })), whole));
+  }
+
+  // ---------- just for fun ----------
+  // Rough, stated conversions. Harry Potter: words per book in the UK first editions, 1,084,170 in all.
+  const HP_WORDS = [76944, 85141, 107253, 190637, 257045, 168923, 198227];
+  const WORDS_PER_TOKEN = 0.75;
+  const HP_SERIES_TOKENS = HP_WORDS.reduce((a, b) => a + b, 0) / WORDS_PER_TOKEN;
+  const HP_BOOK_TOKENS = HP_SERIES_TOKENS / HP_WORDS.length;
+  const TALLER_THAN = [[1.7, 'a person'], [3.05, 'a basketball hoop'], [4.4, 'a double-decker bus'], [5.5, 'a giraffe'], [10, 'a three-storey house'], [46, 'the Statue of Liberty'], [93, 'the Statue of Liberty on its pedestal'], [330, 'the Eiffel Tower'], [828, 'the Burj Khalifa']];
+  function renderFun() {
+    const all = (snap.windows.find((w) => w.key === 'all') || {}).totals;
+    if (!all || !all.total) {
+      $('fun').innerHTML = '<p class="desc">Nothing to convert yet.</p>';
+      return;
+    }
+    const series = all.total / HP_SERIES_TOKENS;
+    const books = all.total / HP_BOOK_TOKENS;
+    const wrote = all.output * WORDS_PER_TOKEN; // words Claude wrote for you
+    const pages = wrote / 275;
+    const stack = (pages * 0.1) / 1000; // metres, one sheet a page
+    const landmark = TALLER_THAN.filter(([h]) => stack >= h).pop();
+    const readMin = wrote / 238;
+    const typeMin = wrote / 40;
+    const workYears = typeMin / 60 / 8 / 250;
+    const lattes = all.cost / 5;
+    const intoSeries = series - Math.floor(series);
+    const lit = Math.round(intoSeries * HP_WORDS.length);
+    const widest = Math.max(...HP_WORDS);
+    const shelf = HP_WORDS.map((w, i) => `<i class="${i < lit ? 'lit' : ''}" style="width:${Math.round(8 + (w / widest) * 16)}px;height:${44 + (i % 3) * 6}px"></i>`).join('');
+    $('fun').innerHTML = `
+      <div class="card fun-hp">
+        <div class="fun-shelf" aria-hidden="true">${shelf}</div>
+        <div class="fun-big">${num('fun.books', books, 'int')}</div>
+        <div class="fun-what">Harry Potter books</div>
+        <p class="fun-line">Everything Claude read and wrote for you, ${compact(all.total)} tokens, fills the whole seven-book series <b>${num('fun.series', series, 'dec1')} times</b>. Claude itself wrote <b>${num('fun.wroteBooks', all.output / HP_BOOK_TOKENS, 'int')} books</b>' worth.</p>
+      </div>
+      <div class="card"><div class="fun-big">${num('fun.pages', pages, 'int')}</div><div class="fun-what">printed pages</div>
+        <p class="fun-line">Everything Claude wrote for you, on paper: a stack <b>${stack.toFixed(1)} m</b> tall${landmark ? `, taller than ${landmark[1]}` : ''}.</p></div>
+      <div class="card"><div class="fun-big">${num('fun.read', readMin, 'dur')}</div><div class="fun-what">of nonstop reading</div>
+        <p class="fun-line">To read all of it at 238 words a minute. At 8 hours a day, <b>${spanOf(readMin * 3)}</b>.</p></div>
+      <div class="card"><div class="fun-big">${num('fun.type', typeMin, 'dur')}</div><div class="fun-what">of nonstop typing</div>
+        <p class="fun-line">For a person typing it at 40 words a minute: <b>${workYears.toFixed(1)} years</b> of 8-hour workdays.</p></div>
+      <div class="card"><div class="fun-big">${num('fun.lattes', lattes, 'int')}</div><div class="fun-what">lattes</div>
+        <p class="fun-line">What your ${usd(all.cost)} of API value would buy at $5 a cup. At your current pace, <b>${Math.round(snap.spend.dailyAverage / 5)} a day</b>.</p></div>
+      <p class="fun-fine">Rough on purpose: about 0.75 words a token, 275 words a page, 0.1 mm a sheet, reading at 238 words a minute and typing at 40. "Read and wrote" counts every token, including the conversation Claude re-reads each reply. The seven Harry Potter books have 1,084,170 words, about ${compact(HP_SERIES_TOKENS)} tokens.</p>`;
+  }
+
+  function renderTiles() {
+    $('tiles').innerHTML = ['fiveHour', 'today', 'week', 'all']
+      .map((k) => {
+        const w = win(k);
+        const t = w.totals;
+        const prompt = t.input + t.cacheWrite + t.cacheRead;
+        return `<div class="card"><div class="stat-label">${esc(w.label)}</div>
+          <div class="stat-value">${num(`tile.${k}`, t.total, 'compact')} <span class="stat-label">tokens</span></div>
+          <div class="stat-sub"><b>${usd(t.cost)}</b> · <b>${compact(t.output)}</b> output · <b>${full(t.requests)}</b> replies</div>
+          <div class="stat-sub"><b>${pct(t.cacheRead, prompt)}%</b> of prompt tokens from cache</div></div>`;
+      })
+      .join('');
+  }
+
+  function chartCard(id, title, what, rows, opts) {
+    const ks = keys();
+    const desc = `${metric === 'cost' ? 'Cost' : 'Tokens'} ${what}, all chats`;
+    const svg = C.stackedColumns(rows, { keys: ks, title, get: valueOf, tick: metric === 'cost' ? axisUsd : compact, ...opts })
+      .replace(/<g class="col" data-i="(\d+)"/g, '<g class="col" data-i="$1" style="--c:$1"');
+    const seg = [['cost', 'Cost'], ['tokens', 'Tokens'], ['nocache', 'Tokens, no cache reads']]
+      .map(([k, label]) => `<button type="button" data-action="metric-${k}" aria-pressed="${metric === k}">${label}</button>`).join('');
+    const head = `<div class="chart-head"><div><h2>${esc(title)}</h2><p class="desc" style="margin:0">${esc(desc)}</p></div><span class="spacer"></span>${C.legend(ks)}
+      <div class="seg no-print" role="group" aria-label="Measure">${seg}</div></div>`;
+    const table = `<details class="data" data-table="${id}"${openTables.has(id) ? ' open' : ''}><summary>Data table</summary><div class="table-wrap"><table><thead><tr><th>${opts.unit}</th>${ks
+      .map((k) => `<th class="num">${esc(C.SERIES.find((s) => s.key === k).label)}</th>`)
+      .join('')}<th class="num">Total</th></tr></thead><tbody>${rows
+      .filter((r) => r.requests > 0)
+      .reverse()
+      .map((r) => `<tr><td>${esc(opts.rowLabel(r.t))}</td>${ks.map((k) => `<td class="num">${show(valueOf(r, k))}</td>`).join('')}<td class="num">${show(ks.reduce((s, k) => s + valueOf(r, k), 0))}</td></tr>`)
+      .join('')}</tbody></table></div></details>`;
+    $(id).innerHTML = head + `<div data-chart="${id}">${svg}</div>` + table;
+  }
+
+  function renderCharts(replay) {
+    chartCard('hourly-card', 'Last 48 hours', 'per hour', snap.series.hourly, {
+      height: 240, labelEvery: 6, labelOffset: 0, xLabel: hourLabel, unit: 'Hour', rowLabel: dateTime,
+    });
+    chartCard('daily-card', 'Last 30 days', 'per day', snap.series.daily, {
+      height: 200, labelEvery: 5, labelOffset: 4, xLabel: shortDate, unit: 'Day', rowLabel: shortDate,
+    });
+    if (replay && !CALM) {
+      for (const id of ['hourly-card', 'daily-card']) {
+        $(id).classList.remove('regrow');
+        void $(id).offsetWidth; // restart the grow-in for the new measure
+        $(id).classList.add('regrow');
+      }
+    }
+  }
+
+  function renderDiagnostics() {
+    $('diagnostics').innerHTML = snap.diagnostics
+      .map((d) => {
+        const s = C.SEVERITY[d.severity];
+        return `<li class="${d.severity}"><span aria-hidden="true">${s.icon}</span><div><div class="d-title">${esc(d.title)}<span class="d-tag">${s.label}</span></div><div class="d-detail">${esc(d.detail)}</div></div></li>`;
+      })
+      .join('');
+  }
+
+  function renderSessions() {
+    const now = Date.now();
+    const rows = snap.sessions;
+    $('sessions-desc').textContent = `${rows.length} chats · ${snap.activeSessions} active in the last 5 minutes`;
+    $('sessions').innerHTML = `<table><thead><tr><th>Chat</th><th>Model</th><th>Last activity</th><th class="num">Cost</th><th class="num">Today</th><th class="num">Tokens</th><th class="num">Output</th><th class="num">Context</th></tr></thead><tbody>${rows
+      .map((s) => {
+        const ctx = s.contextTokens ? `${compact(s.contextTokens)}${s.contextPercent != null ? ` · ${s.contextPercent}%` : ''}` : '—';
+        return `<tr><td><span class="dot${s.active ? ' on' : ''}" title="${s.active ? 'Active' : 'Idle'}"></span><span class="s-title">${esc(s.title)}</span>
+            <div class="s-meta">${esc(s.project)}${s.gitBranch && s.gitBranch !== 'HEAD' ? ` · ${esc(s.gitBranch)}` : ''}${s.subagent.total ? ` · subagents ${usd(s.subagent.cost)}` : ''}</div>${lastLine(`s.${s.id}`, s.summary && s.summary.last)}${chatSummary(s)}</td>
+          <td>${esc(modelName(s.model))}</td>
+          <td data-ago="${s.lastTs}">${ago(s.lastTs, now)}</td>
+          <td class="num"><b>${s.active ? num(`s.${s.id}`, s.tokens.cost) : usd(s.tokens.cost)}</b><span class="sub-cost">${usd2(s.tokens.cost / Math.max(1, s.tokens.requests))} a reply</span></td>
+          <td class="num">${s.today.cost ? usd(s.today.cost) : '—'}</td>
+          <td class="num">${compact(s.tokens.total)}</td>
+          <td class="num">${compact(s.tokens.output)}</td>
+          <td class="num">${ctx}</td></tr>`;
+      })
+      .join('')}</tbody></table>`;
+  }
+
+  /** What the chat is for and where it stands, taken from its own messages. */
+  function chatSummary(s) {
+    const m = s.summary;
+    if (!m || (!m.goal && !m.now)) return '';
+    const so = [
+      m.prompts ? `${m.prompts} request${m.prompts === 1 ? '' : 's'} from you` : '',
+      m.files ? `${m.files} file${m.files === 1 ? '' : 's'} changed` : '',
+      m.work.length ? `mostly ${m.work.map((w) => `${w.label.toLowerCase()} (${Math.round(w.share * 100)}%)`).join(', ')}` : '',
+    ].filter(Boolean).join(' · ');
+    const id = `sum-${s.id}`;
+    return `<details class="sum" data-table="${id}"${openTables.has(id) ? ' open' : ''}><summary><span class="sum-line">${esc(m.goal || m.now)}</span></summary><dl>
+      ${m.goal ? `<dt>Started with</dt><dd>${esc(m.goal)}</dd>` : ''}
+      ${m.latest ? `<dt>Latest request</dt><dd>${esc(m.latest)}</dd>` : ''}
+      ${m.now ? `<dt>${s.active ? 'Happening now' : 'Where it stopped'}</dt><dd>${esc(m.now)}</dd>` : ''}
+      ${so ? `<dt>So far</dt><dd>${esc(so)}</dd>` : ''}</dl></details>`;
+  }
+
+  function renderBreakdown() {
+    const all = win('all');
+    $('breakdown-desc').textContent = `All time · ${usd(all.totals.cost)} · ${compact(all.totals.total)} tokens`;
+    $('models').innerHTML = costRows('m', all.models.slice().sort((a, b) => b.cost - a.cost).map((m) => ({
+      id: m.model, label: modelName(m.model), title: m.model, cost: m.cost,
+      meta: `${replies(m.requests)} · ${compact(m.total)} tokens`,
+    })), all.totals.cost);
+    $('projects').innerHTML = costRows('p', snap.projects.slice().sort((a, b) => b.all.cost - a.all.cost).slice(0, 8).map((p) => ({
+      id: p.project, label: p.project, cost: p.all.cost,
+      meta: `${p.sessions} chat${p.sessions === 1 ? '' : 's'} · ${compact(p.all.total)} tokens`,
+    })), all.totals.cost);
+  }
+
+  function renderFooter() {
+    const d = snap.data;
+    const R = snap.reporter;
+    const P = snap.pricing;
+    $('footer').innerHTML = `<span>${full(d.files)} transcript files · ${full(d.responses)} API responses · ${full(d.duplicateLines)} duplicate lines skipped${d.unreadableLines ? ` · ${full(d.unreadableLines)} unreadable` : ''}</span>
+      <span>Reading <code>${esc(snap.paths.projectsDir)}</code></span>
+      <span class="no-print no-offline"><a href="/api/snapshot?download=1">Download JSON</a> · <a href="/report?download=1">Download report</a></span>
+      ${R.installed && !REMOTE ? '<span class="no-print"><button type="button" data-action="uninstall">Remove reporter</button></span>' : ''}
+      <details class="prices" data-table="prices"${openTables.has('prices') ? ' open' : ''}><summary>Prices used for the dollar figures (per million tokens, as of ${esc(P.asOf)})</summary>
+        <div class="table-wrap"><table><thead><tr><th>Model</th><th class="num">Input</th><th class="num">Output</th><th class="num">Cache read</th><th class="num">Cache write 5 min</th><th class="num">Cache write 1 h</th></tr></thead><tbody>${P.models
+          .map((m) => `<tr><td>${esc(modelName(m.model))}${m.known ? '' : ' (guess)'}</td>${[m.input, m.output, m.cacheRead, m.cacheWrite5m, m.cacheWrite1h].map((v) => `<td class="num">$${+v.toFixed(3)}</td>`).join('')}</tr>`)
+          .join('')}</tbody></table></div></details>`;
+  }
+
+  // ---------- remote access (local dashboard only) ----------
+  let remoteKey = null; // fetched on request from this PC's own server; never part of a snapshot
+  let keyShown = false;
+  const TUNNEL_STATE = { up: ['on', 'Live'], starting: ['', 'Starting…'], approval: ['', 'Needs your OK'], missing: ['', 'Not installed'], error: ['', 'Not connected'], off: ['', 'Off'] };
+
+  function renderRemote() {
+    if (REMOTE) return;
+    const r = snap.remote;
+    if (!r || !r.enabled) {
+      $('remote').innerHTML = `<p class="stat-sub" style="margin:0">Off. Start the monitor with <code>start-remote.cmd</code> to open it from your phone. The README has the steps.</p>`;
+      return;
+    }
+    const t = r.tunnel;
+    let status;
+    let address;
+    if (!t) {
+      status = `<span class="dot on"></span>Listening on 127.0.0.1:${r.port}`;
+      address = `<span class="stat-sub">No tunnel started. Point your own tunnel or reverse proxy at <span class="mono">http://127.0.0.1:${r.port}</span>.</span>`;
+    } else {
+      const [dot, text] = TUNNEL_STATE[t.state] || ['', t.state];
+      status = `<span class="dot ${dot}"></span>${esc(t.label)} · ${text}`;
+      if (t.state === 'up') address = `<a class="mono" href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.url)}</a><button type="button" data-action="copy-url">Copy</button>`;
+      else if (t.state === 'approval') address = `<span>Tailscale needs you to allow this once.</span><a href="${esc(t.approvalUrl)}" target="_blank" rel="noopener">Allow it in Tailscale</a>`;
+      else address = `<span class="stat-sub">${esc(t.message || 'Waiting for the tunnel…')}</span>`;
+    }
+    const key = keyShown && remoteKey
+      ? `<span class="mono">${esc(remoteKey)}</span><button type="button" data-action="hide-key">Hide</button>`
+      : '<span class="mono" aria-label="Hidden">•••••-•••••-•••••-•••••-•••••</span><button type="button" data-action="show-key">Show</button>';
+    const link = t && t.state === 'up' ? '<button type="button" data-action="copy-link">Copy sign-in link</button>' : '';
+    const reach = esc(t ? t.reach : 'Whoever your tunnel lets through');
+    $('remote').innerHTML = `<div class="remote-head"><span>${status}</span></div>
+      <dl class="remote-grid">
+        <dt>Address</dt><dd>${address}</dd>
+        ${r.signIn
+          ? `<dt>Who can open it</dt><dd>${reach}, with the access key</dd>
+             <dt>Access key</dt><dd>${key}${link}<button type="button" data-action="rotate-key">New key…</button></dd>`
+          : `<dt>Who can open it</dt><dd>${reach}. No sign-in, so anyone who has the address can view it.</dd>`}
+      </dl>
+      <p class="note">Your PC has to stay on and awake with the monitor running. Other devices can look but can't install or remove the reporter.${
+        r.signIn ? ' A sign-in link signs a device in with one tap, so anyone who has it can sign in: send it only to yourself.' : ''}</p>`;
+  }
+
+  async function loadKey() {
+    const res = await fetch('/api/remote/key', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    remoteKey = (await res.json()).key;
+    return remoteKey;
+  }
+
+  async function copy(text, btn) {
+    try {
+      await navigator.clipboard.writeText(text);
+      const old = btn.textContent;
+      btn.textContent = 'Copied';
+      setTimeout(() => btn.isConnected && (btn.textContent = old), 1500);
+    } catch {
+      prompt('Copy this:', text);
+    }
+  }
+
+  async function remoteAction(action, btn) {
+    if (action === 'signout') {
+      await fetch('/api/logout', { method: 'POST' }).catch(() => {});
+      return location.replace('/login');
+    }
+    try {
+      if (action === 'show-key') {
+        await loadKey();
+        keyShown = true;
+      } else if (action === 'hide-key') {
+        keyShown = false;
+      } else if (action === 'copy-url') {
+        return copy(snap.remote.tunnel.url, btn);
+      } else if (action === 'copy-link') {
+        const k = remoteKey || (await loadKey());
+        return copy(`${snap.remote.tunnel.url}/login#key=${encodeURIComponent(k)}`, btn);
+      } else if (action === 'rotate-key') {
+        if (!confirm('Make a new access key? Every phone and browser signed in now is signed out and needs the new key.')) return;
+        const res = await fetch('/api/remote/rotate', { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        remoteKey = (await res.json()).key;
+        keyShown = true;
+      }
+      renderRemote();
+    } catch (err) {
+      alert(`That didn't work: ${err.message}`);
+    }
+  }
+
+  function render() {
+    if (!snap) return;
+    $('subtitle').textContent = `${snap.sessions.length} chats · updated ${clock(snap.generatedAt)}`;
+    renderSpend();
+    renderLimits();
+    renderBoard();
+    renderWork();
+    renderCharts();
+    renderTiles();
+    renderFun();
+    renderDiagnostics();
+    renderSessions();
+    renderBreakdown();
+    renderFooter();
+    renderRemote();
+    const signout = document.querySelector('[data-action="signout"]');
+    if (signout) signout.hidden = !(snap.remote && snap.remote.signIn);
+    if (!booted && !CALM) {
+      // First paint only: cards rise in order, columns grow, the trend line draws.
+      document.querySelectorAll('.wrap > .card, .wrap > .grid > .card, .wrap > .section-title, .wrap > div > .section-title, .wrap > div > .card')
+        .forEach((el, i) => el.style.setProperty('--i', Math.min(i, 14)));
+      document.body.classList.add('boot');
+      setTimeout(() => document.body.classList.remove('boot'), 2400);
+    }
+    animate();
+    booted = true;
+  }
+
+  // Countdowns and "x ago" tick locally between snapshots.
+  setInterval(() => {
+    if (!snap) return;
+    const now = Date.now();
+    document.querySelectorAll('[data-until]').forEach((el) => (el.textContent = resetIn(el.getAttribute('data-until'))));
+    document.querySelectorAll('[data-ago]').forEach((el) => (el.textContent = ago(Number(el.getAttribute('data-ago')), now)));
+    if (now - receivedAt > 90000) setLive(false, 'No updates for a while');
+  }, 1000);
+
+  // ---------- actions ----------
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    if (action.startsWith('metric-')) {
+      metric = action.slice(7);
+      store.set('metric', metric);
+      renderCharts(true);
+      return;
+    }
+    if (action.startsWith('work-')) {
+      workRange = action.slice(5);
+      store.set('workRange', workRange);
+      renderWork();
+      animate();
+      return;
+    }
+    if (['show-key', 'hide-key', 'copy-url', 'copy-link', 'rotate-key', 'signout'].includes(action)) {
+      remoteAction(action, btn);
+      return;
+    }
+    if (action === 'install' || action === 'uninstall') {
+      if (action === 'uninstall' && !confirm('Remove the plan-usage-reporter mod from ~/.claude/skills? Limit readings stop updating.')) return;
+      btn.disabled = true;
+      btn.textContent = action === 'install' ? 'Installing…' : 'Removing…';
+      try {
+        const res = await fetch(`/api/reporter/${action}`, { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      } catch (err) {
+        alert(`Could not ${action} the reporter: ${err.message}`);
+        btn.disabled = false;
+      }
+    }
+  });
+
+  // ---------- hover layer ----------
+  const tip = $('tooltip');
+  function place(ev) {
+    tip.hidden = false;
+    // Pointer and box positions are on-screen pixels; left/top are scaled by the page zoom (desktop fit).
+    const z = zoomOf();
+    const r = tip.getBoundingClientRect();
+    const x = Math.max(8, Math.min(ev.clientX + 14, window.innerWidth - r.width - 8));
+    const y = ev.clientY + r.height + 20 > window.innerHeight ? ev.clientY - r.height - 12 : ev.clientY + 14;
+    tip.style.left = `${x / z}px`;
+    tip.style.top = `${y / z}px`;
+  }
+  document.addEventListener('mousemove', (ev) => {
+    if (!snap || !ev.target.closest) return (tip.hidden = true);
+    const spark = ev.target.closest('[data-spark]');
+    if (spark) {
+      const box = spark.querySelector('svg').getBoundingClientRect();
+      const days = snap.series.daily;
+      const i = Math.max(0, Math.min(days.length - 1, Math.round((((ev.clientX - box.left) / box.width) * 960 - 6) / 948 * (days.length - 1))));
+      const d = days[i];
+      tip.innerHTML = `<div class="tt-title">${esc(new Date(d.t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }))}</div>
+        <div class="tt-row"><b>Cost</b><span><b>${usd(d.cost)}</b></span></div><div class="tt-row">Replies<span>${full(d.requests)}</span></div><div class="tt-row">Tokens<span>${compact(d.total)}</span></div>`;
+      return place(ev);
+    }
+    const col = ev.target.closest('.col');
+    const host = col && col.closest('[data-chart]');
+    if (!col || !host) return (tip.hidden = true);
+    const daily = host.getAttribute('data-chart') === 'daily-card';
+    const row = (daily ? snap.series.daily : snap.series.hourly)[Number(col.getAttribute('data-i'))];
+    if (!row) return;
+    const ks = keys();
+    const title = daily ? new Date(row.t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) : `${dateTime(row.t)} – ${clock(row.t + 3600e3)}`;
+    tip.innerHTML = `<div class="tt-title">${esc(title)}</div>${ks
+      .slice()
+      .reverse()
+      .map((k) => {
+        const s = C.SERIES.find((x) => x.key === k);
+        return `<div class="tt-row"><i style="background:${s.color}"></i>${esc(s.label)}<span>${show(valueOf(row, k))}</span></div>`;
+      })
+      .join('')}<div class="tt-row" style="margin-top:4px"><b>Total</b><span><b>${show(ks.reduce((a, k) => a + valueOf(row, k), 0))}</b></span></div>
+      <div class="tt-row">${metric === 'cost' ? 'Tokens' : 'Cost'}<span>${metric === 'cost' ? compact(row.total) : usd(row.cost)}</span></div><div class="tt-row">Replies<span>${full(row.requests)}</span></div>`;
+    place(ev);
+  });
+
+  connect();
+})();

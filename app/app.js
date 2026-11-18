@@ -15,7 +15,7 @@
     get: function (k, d) { try { var v = localStorage.getItem('cu.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
     set: function (k, v) { try { localStorage.setItem('cu.' + k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
   };
-  var state = { tab: store.get('tab', 'me'), code: store.get('code', null), url: store.get('url', null), follow: store.get('follow', false), summary: null, live: false, fetchedAt: 0, friends: store.get('friends', []), cards: {} };
+  var state = { tab: store.get('tab', 'me'), code: store.get('code', null), url: store.get('url', null), follow: store.get('follow', false), summary: null, live: false, fetchedAt: 0, friends: store.get('friends', []), cards: store.get('cards', {}), cloud: store.get('cloud', null), offlinePage: store.get('offlinePage', null), copy: false };
 
   // ---------- helpers ----------
   function h(tag, attrs, kids) {
@@ -48,9 +48,23 @@
       .then(latest)
       .catch(function () { return null; });
   }
+  var GIST_RAW = /^https:\/\/gist\.githubusercontent\.com\/[A-Za-z0-9-]+\/[0-9a-f]{20,40}\/raw\/$/;
+  /** The PC's address, plus where its cloud copy and offline dashboard are when it has them. */
   function addressFor(code) {
     return relay('claude-usage-' + code.toLowerCase()).then(function (body) {
-      try { var u = new URL(JSON.parse(body).url); return u.protocol === 'https:' ? u.origin : null; } catch (e) { return null; }
+      try {
+        var rec = JSON.parse(body);
+        if (GIST_RAW.test(rec.cloud || '')) { state.cloud = rec.cloud; store.set('cloud', rec.cloud); }
+        if (/^https:\/\/[a-z0-9.-]+\/[\w./-]*$/i.test(rec.offline || '')) { state.offlinePage = rec.offline; store.set('offlinePage', rec.offline); }
+        var u = new URL(rec.url);
+        return u.protocol === 'https:' ? u.origin : null;
+      } catch (e) { return null; }
+    });
+  }
+  function readCloudSummary() {
+    return fetch(state.cloud + 'claude-usage-summary.json?t=' + Math.floor(Date.now() / 120000), { cache: 'no-store', signal: timed(10000) }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
     });
   }
   function readSummary(url) {
@@ -77,14 +91,27 @@
         return readSummary(url).then(function (s) { state.url = url; store.set('url', url); return s; });
       });
     }).then(function (s) {
-      state.summary = s; state.live = true; state.fetchedAt = Date.now();
+      state.summary = s; state.live = true; state.copy = false; state.fetchedAt = Date.now();
       store.set('summary', s); store.set('fetchedAt', state.fetchedAt);
-    }, function () { state.live = false; }).then(render);
+    }, function () {
+      state.live = false;
+      // The PC is off or asleep: show the last copy it saved to the cloud, if it keeps one.
+      if (!state.cloud) return;
+      return readCloudSummary().then(function (s) {
+        if (!state.summary || Date.parse(s.generatedAt) >= Date.parse(state.summary.generatedAt || 0)) state.summary = s;
+        state.copy = true;
+        store.set('summary', state.summary);
+      }, function () { /* keep what we have */ });
+    }).then(render);
   }
   function refreshFriends() {
     return Promise.all(state.friends.map(function (code) {
       return friendCard(code).then(function (c) { if (c) state.cards[code] = c; });
-    })).then(render);
+    })).then(function () {
+      // Kept on this phone, so a friend whose computer is off still shows their last figures.
+      store.set('cards', state.cards);
+      render();
+    });
   }
 
   // ---------- views ----------
@@ -166,10 +193,12 @@
     ];
   }
 
+  function s0() { return state.summary; }
   function meView() {
     var s = state.summary;
     var out = [];
-    var status = h('span', { class: 'live' + (state.live ? ' on' : '') }, [h('i'), state.live ? 'Live' : state.fetchedAt ? 'Last update ' + ago(state.fetchedAt) : 'Connecting…']);
+    var copyAt = state.copy && s0() && Date.parse(s0().generatedAt);
+    var status = h('span', { class: 'live' + (state.live ? ' on' : '') }, [h('i'), state.live ? 'Live' : copyAt ? 'Computer off · figures from ' + ago(copyAt) : state.fetchedAt ? 'Last update ' + ago(state.fetchedAt) : 'Connecting…']);
     out.push(h('div', { class: 'row', style: 'margin:0 0 10px' }, [status]));
     if (!s) { out.push(h('div', { class: 'card' }, [h('p', { class: 'fine', text: state.live ? 'Loading…' : 'Can’t reach your computer. Is it on, with the monitor running?' })])); return out; }
     var today = h('div', { class: 'big' });
@@ -198,7 +227,11 @@
         ]);
       }))));
     }
-    if (state.url) out.push(h('a', { class: 'btn wide', href: state.url + '/', target: '_blank', rel: 'noopener', text: 'Open the full dashboard' }));
+    if (!state.live && state.cloud && state.offlinePage) {
+      out.push(h('a', { class: 'btn wide', href: state.offlinePage + '#cloud=' + encodeURIComponent(state.cloud), target: '_blank', rel: 'noopener', text: 'Open the last full dashboard' }));
+    } else if (state.url) {
+      out.push(h('a', { class: 'btn wide', href: state.url + '/', target: '_blank', rel: 'noopener', text: 'Open the full dashboard' }));
+    }
     out.push(h('p', { class: 'fine', style: 'margin-top:14px' }, [state.code ? 'Paired with code ' + pretty(state.code) + '. ' : '', h('button', { class: 'link', type: 'button', text: 'Unpair', onclick: function () {
       if (!confirm('Unpair this phone from the computer?')) return;
       state.code = null; state.url = null; state.summary = null; store.set('code', null); store.set('url', null); render();
@@ -222,7 +255,7 @@
     state.friends.forEach(function (code) {
       var c = state.cards[code];
       var remove = h('button', { class: 'link', type: 'button', text: 'Remove', onclick: function () {
-        state.friends = state.friends.filter(function (x) { return x !== code; }); delete state.cards[code]; store.set('friends', state.friends); render();
+        state.friends = state.friends.filter(function (x) { return x !== code; }); delete state.cards[code]; store.set('friends', state.friends); store.set('cards', state.cards); render();
       } });
       var head = h('div', { class: 'row' }, [h('h2', { style: 'flex:1;margin:0', text: c ? c.name : pretty(code) }), remove]);
       if (!c) { out.push(h('div', { class: 'card' }, [head, h('p', { class: 'fine', text: 'Waiting for their first update…' })])); return; }
