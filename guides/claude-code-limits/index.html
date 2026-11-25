@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Code's 5-hour and weekly limits, explained · Limit</title>
+  <meta name="description" content="What Claude Code's five-hour session limit and weekly limit measure on Pro and Max plans, what uses them up fastest, what to do when you hit one, and habits that make them last.">
+  <link rel="icon" href="../../icon-192.png">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../site.css">
+  
+</head>
+<body>
+  <header class="pub-nav"><div class="in">
+    <a class="brand" href="../../"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
+    <nav aria-label="Main"><a href="../../guides/">Guides</a><a href="../../get/">Download</a><a class="btn primary" href="../../">Sign in</a></nav>
+  </div></header>
+  <main class="prose">
+    <p class="meta"><a href="../">Guides</a></p>
+    <h1>Claude Code's 5-hour and weekly limits, explained</h1>
+    <p class="lede">On a Pro or Max plan, Claude Code doesn't charge you per token. You get an allowance instead, measured two ways. Here's what each limit means and how to make them last.</p>
+    <p class="meta">Updated 23 November 2026 · 6 min read</p>
+
+    <h2>The two limits</h2>
+    <p>Anthropic's help centre puts it simply: Pro and Max plans have a <b>five-hour session limit</b> and a <b>weekly limit</b>. Think of them as two buckets that fill as you work:</p>
+    <ul>
+      <li><b>The five-hour limit</b> caps how much you can do in a short burst. It protects against one long, heavy session using everything at once.</li>
+      <li><b>The weekly limit</b> caps your total over a week, so steady daily use can still run out before the week is over.</li>
+    </ul>
+    <p>Other plans differ a little. Anthropic lists Ultra with a weekly limit only, and Max and Ultra also have a separate weekly limit for Fable models. Plans and numbers change from time to time, so check Anthropic's current help article on <a href="https://support.claude.com/en/articles/11145838-using-claude-code-with-your-pro-or-max-plan">using Claude Code with your Pro or Max plan</a> rather than relying on numbers you saw online.</p>
+
+    <h2>Shared with the rest of Claude</h2>
+    <p>The limits aren't just for Claude Code. They're shared across Claude, so chats on claude.ai and in the Claude apps come out of the same allowance, and so does Claude Code running inside your editor. If you spent the morning on a long research chat in the browser, you'll have less left for coding in the afternoon.</p>
+    <p>To see where you stand, type <code>/usage</code> in Claude Code. On a plan, it shows a bar for each limit, how much of it you've used, and when it resets. The reset time on that screen is the one to trust. Don't try to work it out from memory.</p>
+
+    
+
+    <h2>What uses them up fastest</h2>
+    <p>Your allowance goes down with the work the model does, not with the number of messages you send. A few things make each message much bigger than it looks:</p>
+    <ul>
+      <li><b>Long chats.</b> Every request sends the whole conversation again. Prompt caching makes that cheaper, but a chat with a full context window still costs far more per message than a fresh one.</li>
+      <li><b>The biggest models.</b> Anthropic's own advice is to use Sonnet for most coding and save Opus for the hard problems. The largest models use your allowance faster.</li>
+      <li><b>Extended thinking.</b> Thinking tokens are real tokens. High effort on a simple task is wasted allowance.</li>
+      <li><b>Subagents and agent teams.</b> They're handy for keeping your main chat clean, but their requests count against your usage too, and a team of several agents uses several times as much.</li>
+      <li><b>Unused MCP servers.</b> Every connected server adds its tool descriptions to the context of every request, whether you use them or not.</li>
+      <li><b>Noisy tool output.</b> A test run or log that prints thousands of lines lands in the context and stays there.</li>
+    </ul>
+
+    <h2>When you hit a limit</h2>
+    <p>Claude Code tells you when you've reached a limit. According to Anthropic's help article, you then have three choices:</p>
+    <ol>
+      <li><b>Wait for the reset.</b> <code>/usage</code> shows when that is. For the five-hour limit that's a matter of hours at most. For the weekly limit it may be days.</li>
+      <li><b>Turn on usage credits,</b> so you can keep going and pay for the extra usage.</li>
+      <li><b>Switch to a Console account</b> and pay for API credits instead.</li>
+    </ol>
+    <p>If you pay extra, keep an eye on it. Extra usage is billed per token, so the habits below start saving real money, not just allowance.</p>
+
+    <h2>Habits that make your limits last</h2>
+    <p>Most of these come straight from Anthropic's guide to managing costs in Claude Code, and they work just as well for stretching a plan:</p>
+    <ul>
+      <li><b>Clear between tasks.</b> <code>/clear</code> starts fresh when you move on to something unrelated. Old context only makes each request bigger.</li>
+      <li><b>Compact long chats.</b> <code>/compact</code> replaces the history with a summary. You can tell it what to keep, for example <code>/compact keep the API design decisions</code>.</li>
+      <li><b>Pick the model for the job.</b> Switch with <code>/model</code>. Small, clear tasks rarely need the largest model.</li>
+      <li><b>Turn thinking down</b> with <code>/effort</code> for routine work.</li>
+      <li><b>Keep CLAUDE.md short.</b> Anthropic suggests under 200 lines. It's sent with every request, so every line costs you each time. Move instructions you only need for one kind of task into skills.</li>
+      <li><b>Disconnect MCP servers you aren't using</b> with <code>/mcp</code>.</li>
+      <li><b>Plan first.</b> Plan mode (Shift+Tab) lets Claude look around and propose an approach before it starts editing, which avoids expensive wrong turns.</li>
+      <li><b>Stop it early.</b> If a reply heads the wrong way, press Escape, or use <code>/rewind</code>, instead of letting it finish and then asking for a redo.</li>
+    </ul>
+
+    <h2>Keep an eye on your pace</h2>
+    <p>The limits are easiest to manage when you notice early. Look at <code>/usage</code> at the start of a big task, and again halfway through. If you've used most of the five-hour limit in the first hour, slow down or switch to a smaller model, instead of finding out mid-task.</p>
+
+    <div class="cta">
+      <h2>Track it with Limit</h2>
+      <p>Limit shows both limits, how fast you're using them and when each resets, on your phone as well as your computer, so you can check before you start something big. <a href="../../">Sign in with Google</a> and <a href="../../get/">install the app</a>. It's free.</p>
+    </div>
+    
+  </main>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../../guides/">Guides</a><a href="../../about/">About</a><a href="../../privacy/">Privacy</a><a href="../../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>

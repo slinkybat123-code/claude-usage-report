@@ -8,7 +8,10 @@
   // The server marks the copy it serves to other devices; that copy is read-only.
   // The offline dashboard (cloud copy) behaves like a remote viewer: read-only.
   const OFFLINE = window.CLOUD_COPY || null;
-  const REMOTE = document.body.dataset.mode === 'remote' || Boolean(OFFLINE);
+  // The website (Limit): the page's own script hands in what your computer uploaded.
+  const HOSTED = document.documentElement.hasAttribute('data-hosted');
+  const REMOTE = document.body.dataset.mode === 'remote' || Boolean(OFFLINE) || HOSTED;
+  let feedMeta = null; // website: { name, updatedAt } of the computer the figures came from
   const CALM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const store = {
@@ -124,7 +127,9 @@
 
   // ---------- theme ----------
   const THEMES = ['system', 'light', 'dark'];
-  let theme = THEMES.includes(store.get('theme')) ? store.get('theme') : 'system';
+  // Inside the phone app (html.shell) the app's Settings choose the theme; mode.js has already applied it.
+  const SHELL_THEME = document.documentElement.classList.contains('shell') ? document.documentElement.getAttribute('data-theme') || 'system' : null;
+  let theme = SHELL_THEME || (THEMES.includes(store.get('theme')) ? store.get('theme') : 'system');
   function applyTheme() {
     if (theme === 'system') document.documentElement.removeAttribute('data-theme');
     else document.documentElement.setAttribute('data-theme', theme);
@@ -160,7 +165,36 @@
     setTimeout(loadCloudCopy, 120000);
   }
 
+  /** Website: live while the computer uploaded in the last few minutes, otherwise the last upload. */
+  function feedStatus() {
+    if (!feedMeta) return;
+    const at = feedMeta.updatedAt || 0;
+    const fresh = Date.now() - at < 6 * 60e3;
+    setLive(fresh, fresh ? `Live · ${feedMeta.name}` : `${feedMeta.name} · ${ago(at, Date.now())}`);
+    const note = $('offline-note');
+    if (note) {
+      note.hidden = fresh;
+      note.textContent = fresh ? '' : `${feedMeta.name} is off or asleep, so these are the figures it last sent, from ${new Date(at).toLocaleString([], { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}. They update by themselves when it's back.`;
+    }
+  }
+
+  // Other scripts on the page (the friends strip) read the figures on screen from here.
+  window.Dashboard = { snapshot: () => snap };
+
   function connect() {
+    if (HOSTED) {
+      Object.assign(window.Dashboard, {
+        feed(s, meta) {
+          snap = s;
+          feedMeta = meta;
+          receivedAt = Date.now();
+          render();
+          feedStatus();
+        },
+      });
+      window.dispatchEvent(new Event('dashboard-ready'));
+      return;
+    }
     if (OFFLINE) return loadCloudCopy();
     const es = new EventSource('/api/events');
     es.addEventListener('snapshot', (ev) => {
@@ -182,8 +216,10 @@
 
   // ---------- sections ----------
   const win = (key) => snap.windows.find((w) => w.key === key);
-  const modelName = (m) => (m || '').replace(/^claude-/, '');
+  const modelName = (m) => (window.Insights ? window.Insights.prettyModel(m) : (m || '').replace(/^claude-/, ''));
   const replies = (n) => `${full(n)} ${n === 1 ? 'reply' : 'replies'}`;
+  /** Makes an element open its breakdown when clicked (see the detail sheet below). */
+  const opens = (ref) => (window.Sheet ? window.Sheet.attrs(ref) : '');
 
   function renderSpend() {
     const S = snap.spend;
@@ -193,17 +229,17 @@
     const max = Math.max(1e-9, ...values);
     const last = values[values.length - 1];
     const mix = ALL_KEYS.map((k) => ({ k, s: C.SERIES.find((x) => x.key === k), v: S.byType[k] }));
-    $('spend').innerHTML = `<div>
-        <div class="eyebrow">All chats combined · API value</div>
+    $('spend').innerHTML = `<div class="spend-head"${opens('window:all')}>
+        <div class="eyebrow">All chats combined · API value <span class="chev" aria-hidden="true">›</span></div>
         <div class="spend-total">${num('spend.all', S.allTime, 'hero')}</div>
         <div class="stat-sub"><b>${num('spend.req', all.requests, 'int')}</b> replies across <b>${snap.sessions.length}</b> chats · <b>${num('spend.per', S.perRequest, 'usd2')}</b> per reply</div>
         <p class="fine">Priced at Anthropic's API list rates, the way /cost does it. On a subscription plan you pay your plan price, not this.</p>
       </div>
       <dl class="kpis">
-        <div><dt>Today</dt><dd>${num('spend.today', S.today)}<small>${replies(win('today').totals.requests)}</small></dd></div>
-        <div><dt>${esc(win('week').label)}</dt><dd>${num('spend.week', S.week)}<small>${replies(win('week').totals.requests)}</small></dd></div>
-        <div><dt>Last hour</dt><dd>${num('spend.hour', S.lastHour)}<small>${snap.activeSessions} chat${snap.activeSessions === 1 ? '' : 's'} active now</small></dd></div>
-        <div><dt>Next 30 days at this pace</dt><dd>${num('spend.proj', S.projected30Days)}<small>${usd(S.dailyAverage)} a day, 7-day average</small></dd></div>
+        <div${opens('window:today')}><dt>Today</dt><dd>${num('spend.today', S.today)}<small>${replies(win('today').totals.requests)}</small></dd></div>
+        <div${opens('window:week')}><dt>${esc(win('week').label)}</dt><dd>${num('spend.week', S.week)}<small>${replies(win('week').totals.requests)}</small></dd></div>
+        <div${opens('lastHour')}><dt>Last hour</dt><dd>${num('spend.hour', S.lastHour)}<small>${snap.activeSessions} chat${snap.activeSessions === 1 ? '' : 's'} active now</small></dd></div>
+        <div${opens('projection')}><dt>Next 30 days at this pace</dt><dd>${num('spend.proj', S.projected30Days)}<small>${usd(S.dailyAverage)} a day, 7-day average</small></dd></div>
       </dl>
       <div class="spend-trend" data-spark>
         <div class="cap"><span>Cost per day, last 30 days</span><span>${S.topDay ? `Peak ${usd(S.topDay.cost)} on ${shortDate(S.topDay.t)}` : ''}</span></div>
@@ -224,21 +260,21 @@
     const cards = [];
 
     if (five) {
-      cards.push(`<div class="card"><h2>${esc(five.label)}</h2><p class="desc">Plan usage, as /usage shows it</p>
+      cards.push(`<div class="card"${opens('limit:five_hour')}><h2>${esc(five.label)}</h2><p class="desc">Plan usage, as /usage shows it</p>
         <div class="hero">${num('lim.five', five.percentUsed, 'int')}<small>%</small></div>${C.meter(five.percentUsed)}
         <div class="limit-row"><span>Resets in <b data-until="${esc(five.resetsAt)}">${resetIn(five.resetsAt)}</b></span><span>${five.resetsAt ? `at ${clock(Date.parse(five.resetsAt))}` : ''}</span></div>
         ${projectionLine(five)}</div>`);
     } else {
       const t = win('fiveHour').totals;
       const gone = (L.expired || []).find((w) => w.kind === 'five_hour');
-      cards.push(`<div class="card"><h2>Last 5 hours</h2><p class="desc">All chats</p>
+      cards.push(`<div class="card"${opens('window:fiveHour')}><h2>Last 5 hours</h2><p class="desc">All chats</p>
         <div class="hero">${num('five.cost', t.cost)}</div>
         <div class="stat-sub"><b>${num('five.tok', t.total, 'compact')}</b> tokens · <b>${full(t.requests)}</b> replies</div>
         ${gone ? `<div class="note">The 5-hour limit reset at ${clock(Date.parse(gone.resetsAt))}. Its new % shows after your next reply.</div>` : ''}</div>`);
     }
 
     for (const w of others) {
-      cards.push(`<div class="card"><h2>${esc(w.label)}</h2><p class="desc">Plan usage</p>
+      cards.push(`<div class="card"${opens(`limit:${w.kind}`)}><h2>${esc(w.label)}</h2><p class="desc">Plan usage</p>
         <div class="limit-pct">${num(`lim.${w.kind}`, w.percentUsed, 'pct')}</div>${C.meter(w.percentUsed)}
         <div class="limit-row"><span>Resets in <b data-until="${esc(w.resetsAt)}">${resetIn(w.resetsAt)}</b></span><span>${w.resetsAt ? dateTime(Date.parse(w.resetsAt)) : ''}</span></div>
         ${projectionLine(w)}</div>`);
@@ -248,7 +284,7 @@
     let body;
     if (!R.installed) {
       body = `<div class="callout"><p>${L.connected ? 'These readings stop updating without the reporter. ' : ''}Plan limits are not in Claude Code's log files. The <b>plan-usage-reporter</b> mod writes them after each reply.</p>
-        ${REMOTE ? '<p>Install it from the dashboard on your PC.</p>' : '<button class="primary no-print" type="button" data-action="install">Install reporter</button>'}</div>`;
+        ${HOSTED ? '<p>Run the Limit installer again on your computer and keep <b>Show my plan limits</b> ticked.</p>' : REMOTE ? '<p>Install it from the dashboard on your PC.</p>' : '<button class="primary no-print" type="button" data-action="install">Install reporter</button>'}</div>`;
     } else if (!L.connected) {
       body = `<div class="callout"><p>Reporter installed. Readings appear after the next reply in a session started since then.</p><p>Sessions that were already running need a restart to load it.</p></div>`;
     } else {
@@ -257,7 +293,6 @@
         ${R.updateAvailable && !REMOTE ? '<button class="no-print" type="button" data-action="install" style="margin-top:10px">Update reporter</button>' : ''}`;
     }
     cards.push(`<div class="card"><h2>Limit data</h2><p class="desc">${R.installed ? `plan-usage-reporter ${esc(R.installedVersion)}` : 'Reporter not installed'}</p>${body}</div>`);
-    while (cards.length < 3) cards.push('<div class="card" aria-hidden="true"></div>');
     $('limits').innerHTML = cards.join('');
   }
 
@@ -271,15 +306,17 @@
     return `<div class="note">Pace: +${p.percentPerHour}%/h · ${warn ? `<b>runs out ~${clock(p.etaAt)}</b>, before reset` : 'lasts until reset'}</div>`;
   }
 
+  const BOARD_ROWS = 6; // keeps this card about as tall as the one beside it
   function renderBoard() {
-    const rows = snap.leaderboard.filter((r) => r.cost > 0);
+    const rows = snap.leaderboard.filter((r) => r.cost > 0).slice(0, BOARD_ROWS);
+    const chats = new Map(snap.sessions.map((x) => [x.id, x]));
     const top = rows.length ? rows[0].cost : 1;
-    $('board-desc').textContent = `Top ${rows.length} of ${snap.sessions.length}, all time, at API prices`;
+    $('board-desc').textContent = `Top ${rows.length} of ${snap.sessions.length}, all time, at API prices · click one for its breakdown`;
     reorder($('board'), rows.length
-      ? rows.map((r) => `<li data-id="${esc(r.id)}">
+      ? rows.map((r) => `<li data-id="${esc(r.id)}"${opens(`chat:${r.id}`)}>
           <span class="rank">${r.rank}</span>
           <div class="b-main"><div class="b-title" title="${esc(r.title)}"><span class="dot${r.active ? ' on' : ''}" title="${r.active ? 'Active now' : 'Idle'}"></span>${esc(r.title)}</div>
-            <div class="b-meta">${esc(r.project)} · ${esc(modelName(r.model))} · ${replies(r.requests)}</div>${lastLine(r.id, r.last)}</div>
+            <div class="b-meta">${esc(r.project)} · ${esc(modelName(r.model))} · ${replies(r.requests)}</div>${lastLine(r.id, r.last)}${chatFold(chats.get(r.id), 'b')}</div>
           <div class="b-cost">${num(`b.${r.id}`, r.cost)}<small>${r.costToday > 0.005 ? `+${usd(r.costToday)} today` : `${Math.round(r.share * 100)}% of all`}</small></div>
           <div class="track">${fill(`bw.${r.id}`, Math.max(1, (r.cost / top) * 100))}</div></li>`).join('')
       : '<li class="empty">No usage yet.</li>');
@@ -320,7 +357,7 @@
   function costRows(prefix, items, whole) {
     const top = Math.max(1e-9, ...items.map((d) => d.cost));
     return items.length
-      ? items.map((d) => `<li data-id="${esc(d.id)}">
+      ? items.map((d) => `<li data-id="${esc(d.id)}"${d.ref ? opens(d.ref) : ''}>
           <div class="b-main"><div class="b-title" title="${esc(d.title || d.label)}">${esc(d.label)}</div><div class="b-meta">${esc(d.meta)}</div></div>
           <div class="b-cost">${num(`${prefix}.${d.id}`, d.cost)}<small>${pct(d.cost, whole)}% of spend</small></div>
           <div class="track">${fill(`${prefix}w.${d.id}`, Math.max(1, (d.cost / top) * 100))}</div></li>`).join('')
@@ -333,7 +370,7 @@
     const rows = snap.work[workRange].filter((w) => w.cost > 0);
     const whole = rows.reduce((s, w) => s + w.cost, 0);
     reorder($('work'), costRows(`w.${workRange}`, rows.map((w) => ({
-      id: w.key, label: w.label, cost: w.cost,
+      id: w.key, ref: `work:${w.key}`, label: w.label, cost: w.cost,
       meta: `${replies(w.requests)} · ${usd2(w.cost / Math.max(1, w.requests))} each · ${compact(w.total)} tokens`,
     })), whole));
   }
@@ -389,7 +426,7 @@
         const w = win(k);
         const t = w.totals;
         const prompt = t.input + t.cacheWrite + t.cacheRead;
-        return `<div class="card"><div class="stat-label">${esc(w.label)}</div>
+        return `<div class="card"${opens(`window:${k}`)}><div class="stat-label">${esc(w.label)}</div>
           <div class="stat-value">${num(`tile.${k}`, t.total, 'compact')} <span class="stat-label">tokens</span></div>
           <div class="stat-sub"><b>${usd(t.cost)}</b> · <b>${compact(t.output)}</b> output · <b>${full(t.requests)}</b> replies</div>
           <div class="stat-sub"><b>${pct(t.cacheRead, prompt)}%</b> of prompt tokens from cache</div></div>`;
@@ -433,23 +470,26 @@
   }
 
   function renderDiagnostics() {
+    const byTitle = new Map(snap.sessions.map((s) => [s.title, s.id]));
     $('diagnostics').innerHTML = snap.diagnostics
       .map((d) => {
         const s = C.SEVERITY[d.severity];
-        return `<li class="${d.severity}"><span aria-hidden="true">${s.icon}</span><div><div class="d-title">${esc(d.title)}<span class="d-tag">${s.label}</span></div><div class="d-detail">${esc(d.detail)}</div></div></li>`;
+        const named = (String(d.title).match(/"([^"]+)"/) || [])[1];
+        const id = named && byTitle.get(named);
+        return `<li class="${d.severity}"${id ? opens(`chat:${id}`) : ''}><span aria-hidden="true">${s.icon}</span><div><div class="d-title">${esc(d.title)}<span class="d-tag">${s.label}</span></div><div class="d-detail">${esc(d.detail)}</div></div></li>`;
       })
       .join('');
   }
 
   function renderSessions() {
     const now = Date.now();
-    const rows = snap.sessions;
-    $('sessions-desc').textContent = `${rows.length} chats · ${snap.activeSessions} active in the last 5 minutes`;
+    const rows = showAllChats ? snap.sessions : snap.sessions.slice(0, CHATS_SHOWN);
+    $('sessions-desc').textContent = `${snap.sessions.length} chats · ${snap.activeSessions} active in the last 5 minutes · click one for its breakdown`;
     $('sessions').innerHTML = `<table><thead><tr><th>Chat</th><th>Model</th><th>Last activity</th><th class="num">Cost</th><th class="num">Today</th><th class="num">Tokens</th><th class="num">Output</th><th class="num">Context</th></tr></thead><tbody>${rows
       .map((s) => {
         const ctx = s.contextTokens ? `${compact(s.contextTokens)}${s.contextPercent != null ? ` · ${s.contextPercent}%` : ''}` : '—';
-        return `<tr><td><span class="dot${s.active ? ' on' : ''}" title="${s.active ? 'Active' : 'Idle'}"></span><span class="s-title">${esc(s.title)}</span>
-            <div class="s-meta">${esc(s.project)}${s.gitBranch && s.gitBranch !== 'HEAD' ? ` · ${esc(s.gitBranch)}` : ''}${s.subagent.total ? ` · subagents ${usd(s.subagent.cost)}` : ''}</div>${lastLine(`s.${s.id}`, s.summary && s.summary.last)}${chatSummary(s)}</td>
+        return `<tr${opens(`chat:${s.id}`)}><td><span class="dot${s.active ? ' on' : ''}" title="${s.active ? 'Active' : 'Idle'}"></span><span class="s-title">${esc(s.title)}</span>
+            <div class="s-meta">${esc(s.project)}${s.gitBranch && s.gitBranch !== 'HEAD' ? ` · ${esc(s.gitBranch)}` : ''}${s.subagent.total ? ` · subagents ${usd(s.subagent.cost)}` : ''}</div>${lastLine(`s.${s.id}`, s.summary && s.summary.last)}${chatFold(s, 's')}</td>
           <td>${esc(modelName(s.model))}</td>
           <td data-ago="${s.lastTs}">${ago(s.lastTs, now)}</td>
           <td class="num"><b>${s.active ? num(`s.${s.id}`, s.tokens.cost) : usd(s.tokens.cost)}</b><span class="sub-cost">${usd2(s.tokens.cost / Math.max(1, s.tokens.requests))} a reply</span></td>
@@ -458,37 +498,63 @@
           <td class="num">${compact(s.tokens.output)}</td>
           <td class="num">${ctx}</td></tr>`;
       })
-      .join('')}</tbody></table>`;
+      .join('')}</tbody></table>${snap.sessions.length > CHATS_SHOWN ? `<div class="more-row"><button type="button" class="more-toggle" data-action="chats-toggle" aria-expanded="${showAllChats}">${showAllChats ? 'Show fewer chats' : `Show ${snap.sessions.length - CHATS_SHOWN} more chats`}<span class="caret" aria-hidden="true"></span></button></div>` : ''}`;
   }
+  const CHATS_SHOWN = 10;
+  let showAllChats = false;
 
-  /** What the chat is for and where it stands, taken from its own messages. */
-  function chatSummary(s) {
-    const m = s.summary;
-    if (!m || (!m.goal && !m.now)) return '';
-    const so = [
-      m.prompts ? `${m.prompts} request${m.prompts === 1 ? '' : 's'} from you` : '',
-      m.files ? `${m.files} file${m.files === 1 ? '' : 's'} changed` : '',
-      m.work.length ? `mostly ${m.work.map((w) => `${w.label.toLowerCase()} (${Math.round(w.share * 100)}%)`).join(', ')}` : '',
-    ].filter(Boolean).join(' · ');
-    const id = `sum-${s.id}`;
-    return `<details class="sum" data-table="${id}"${openTables.has(id) ? ' open' : ''}><summary><span class="sum-line">${esc(m.goal || m.now)}</span></summary><dl>
+  /** What a chat is for and where it stands, from its own messages: one line that folds open. */
+  function chatFold(s, where) {
+    const m = s && s.summary;
+    if (!m || (!m.goal && !m.latest && !m.now)) return '';
+    const so = window.Insights ? window.Insights.soFarText(s) : '';
+    const id = `sum-${where}-${s.id}`;
+    return `<details class="sum" data-table="${esc(id)}"${openTables.has(id) ? ' open' : ''}><summary><span class="sum-line">${esc(m.goal || m.latest || m.now)}</span></summary><dl>
       ${m.goal ? `<dt>Started with</dt><dd>${esc(m.goal)}</dd>` : ''}
       ${m.latest ? `<dt>Latest request</dt><dd>${esc(m.latest)}</dd>` : ''}
       ${m.now ? `<dt>${s.active ? 'Happening now' : 'Where it stopped'}</dt><dd>${esc(m.now)}</dd>` : ''}
       ${so ? `<dt>So far</dt><dd>${esc(so)}</dd>` : ''}</dl></details>`;
   }
 
+  // ---------- your prompts ----------
+  function renderPrompts() {
+    const el = $('prompts-card');
+    if (!el || !window.Insights || !window.PromptCoach) return;
+    const sum = window.PromptCoach.summarizePrompts(window.Insights.promptItems(snap));
+    el.hidden = !sum.count;
+    if (!sum.count) return;
+    const n = Object.fromEntries(sum.grades.map((g) => [g.grade, g.count]));
+    const d = window.Insights.detail(snap, { type: 'prompts' });
+    const top = d && d.tips[0];
+    const seg = [['Clear', 'good'], ['Could be clearer', 'mid'], ['Vague', 'bad']];
+    el.innerHTML = `<div class="pr-score"><div class="eyebrow">Your prompts</div>
+        <div class="pr-big">${num('pr.avg', sum.avgScore, 'int')}<small>/100</small></div>
+        <div class="stat-sub">average clarity over <b>${full(sum.count)}</b> requests</div></div>
+      <div class="pr-grades"><div class="pr-bar" role="img" aria-label="${seg.map(([g]) => `${g}: ${n[g] || 0}`).join(', ')}">${seg.filter(([g]) => n[g]).map(([g, c]) => `<span class="${c}" style="flex-grow:${n[g]}"></span>`).join('')}</div>
+        <div class="pr-legend">${seg.map(([g, c]) => `<span><i class="${c}"></i>${esc(g)} <b>${full(n[g] || 0)}</b></span>`).join('')}</div></div>
+      <div class="pr-tip">${top ? `<div class="stat-label">Biggest win</div><b>${esc(top.title)}</b><p>${esc(top.detail)}</p>` : ''}</div>
+      <span class="chev" aria-hidden="true">›</span>`;
+  }
+
   function renderBreakdown() {
     const all = win('all');
     $('breakdown-desc').textContent = `All time · ${usd(all.totals.cost)} · ${compact(all.totals.total)} tokens`;
     $('models').innerHTML = costRows('m', all.models.slice().sort((a, b) => b.cost - a.cost).map((m) => ({
-      id: m.model, label: modelName(m.model), title: m.model, cost: m.cost,
+      id: m.model, ref: `model:${m.model}`, label: modelName(m.model), title: m.model, cost: m.cost,
       meta: `${replies(m.requests)} · ${compact(m.total)} tokens`,
     })), all.totals.cost);
-    $('projects').innerHTML = costRows('p', snap.projects.slice().sort((a, b) => b.all.cost - a.all.cost).slice(0, 8).map((p) => ({
-      id: p.project, label: p.project, cost: p.all.cost,
+    // As many folders as there are models (at least 5), then the rest in one row, so the two cards match.
+    const folders = snap.projects.slice().sort((a, b) => b.all.cost - a.all.cost);
+    const shown = Math.max(5, all.models.length);
+    const rest = folders.slice(shown);
+    const restCost = rest.reduce((n, p) => n + p.all.cost, 0);
+    $('projects').innerHTML = costRows('p', folders.slice(0, shown).map((p) => ({
+      id: p.project, ref: `project:${p.project}`, label: p.project, cost: p.all.cost,
       meta: `${p.sessions} chat${p.sessions === 1 ? '' : 's'} · ${compact(p.all.total)} tokens`,
-    })), all.totals.cost);
+    })).concat(rest.length ? [{
+      id: '~rest', label: `${rest.length} more folder${rest.length === 1 ? '' : 's'}`, cost: restCost,
+      meta: rest.slice(0, 3).map((p) => p.project).join(', ') + (rest.length > 3 ? ', …' : ''),
+    }] : []), all.totals.cost);
   }
 
   function renderFooter() {
@@ -599,6 +665,7 @@
     $('subtitle').textContent = `${snap.sessions.length} chats · updated ${clock(snap.generatedAt)}`;
     renderSpend();
     renderLimits();
+    renderPrompts();
     renderBoard();
     renderWork();
     renderCharts();
@@ -609,6 +676,7 @@
     renderBreakdown();
     renderFooter();
     renderRemote();
+    if (window.Sheet) window.Sheet.refresh();
     const signout = document.querySelector('[data-action="signout"]');
     if (signout) signout.hidden = !(snap.remote && snap.remote.signIn);
     if (!booted && !CALM) {
@@ -628,7 +696,8 @@
     const now = Date.now();
     document.querySelectorAll('[data-until]').forEach((el) => (el.textContent = resetIn(el.getAttribute('data-until'))));
     document.querySelectorAll('[data-ago]').forEach((el) => (el.textContent = ago(Number(el.getAttribute('data-ago')), now)));
-    if (now - receivedAt > 90000) setLive(false, 'No updates for a while');
+    if (HOSTED) feedStatus();
+    else if (now - receivedAt > 90000) setLive(false, 'No updates for a while');
   }, 1000);
 
   // ---------- actions ----------
@@ -636,6 +705,13 @@
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.getAttribute('data-action');
+    if (action === 'chats-toggle') {
+      showAllChats = !showAllChats;
+      renderSessions();
+      animate();
+      if (!showAllChats) $('sessions').scrollIntoView({ block: 'start' });
+      return;
+    }
     if (action.startsWith('metric-')) {
       metric = action.slice(7);
       store.set('metric', metric);
@@ -666,6 +742,9 @@
       }
     }
   });
+
+  // ---------- breakdowns: every figure opens one (public/sheet.js draws them, public/insights.js works them out) ----------
+  if (window.Sheet && window.Insights) window.Sheet.use((ref) => (snap ? window.Insights.detail(snap, window.Sheet.parse(ref)) : null));
 
   // ---------- hover layer ----------
   const tip = $('tooltip');

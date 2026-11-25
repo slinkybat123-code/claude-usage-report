@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en" data-hosted>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Computers · Limit</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="../icon-192.png">
+  <link rel="apple-touch-icon" href="../icon-192.png">
+  <link rel="manifest" href="../manifest.webmanifest">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../style.css">
+  <link rel="stylesheet" href="../site.css">
+  <script src="../config.js"></script>
+  
+</head>
+<body>
+  <nav class="site-nav" id="site-nav" aria-label="Limit"></nav>
+  <main class="page">
+    <div class="page-head">
+      <div>
+        <h1>Computers</h1>
+        <p>The computers that send your Claude Code figures to this account. They only send; nothing here can reach into them.</p>
+      </div>
+    </div>
+
+    <section class="card approve" id="approve" hidden aria-live="polite"></section>
+
+    <h2 class="block">Linked to your account</h2>
+    <div class="card"><ul class="people" id="devices"><li><p class="empty">Loading…</p></li></ul></div>
+
+    <h2 class="block">Add a computer</h2>
+    <div class="downloads">
+      <div class="download"><h3>Windows</h3><p>An installer for Windows 10 or 11. No administrator rights needed. About 50 MB.</p><a class="btn primary" data-dl="LimitSetup.exe">Download for Windows</a></div>
+      <div class="download"><h3>Mac</h3><p>A disk image for Apple silicon and Intel Macs, macOS 12 or later.</p><a class="btn primary" data-dl="Limit.dmg">Download for Mac</a></div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <ol class="steps">
+        <li>Install it on the computer where you use Claude Code.</li>
+        <li>When it finishes, your browser opens this page with a link request. Check the computer's name and click <b>Link</b>.</li>
+        <li>That's it. It starts with Windows (or your Mac) and sends new figures within a minute or two of each Claude Code reply.</li>
+      </ol>
+      <form id="code-form" class="form-row" style="margin-top:16px" autocomplete="off">
+        <label for="code" class="sr-only">Link code from your computer</label>
+        <input id="code" name="code" type="text" placeholder="Or type the link code from your computer" spellcheck="false" autocapitalize="characters" maxlength="14">
+        <button type="submit">Find it</button>
+      </form>
+    </div>
+
+    <h2 class="block">Your account</h2>
+    <div class="card account-card">
+      <p class="desc">Signed in as <b id="acct-email"></b>. Deleting your account removes your figures, saved keys, computers, friend card, shares and invites, and your sign-in. Your friends stop seeing you. This can't be undone.</p>
+      <button type="button" class="danger" id="delete-account">Delete my account</button>
+      <p class="err" id="delete-err" role="alert" hidden></p>
+    </div>
+  </main>
+  <script type="module" src="../js/computers.js"></script>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../guides/">Guides</a><a href="../about/">About</a><a href="../privacy/">Privacy</a><a href="../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>

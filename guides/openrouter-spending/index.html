@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to track your OpenRouter spending · Limit</title>
+  <meta name="description" content="How OpenRouter credits work, how to check a key's spend with the API, why your total balance needs a management key, and how per-key credit limits keep costs in check.">
+  <link rel="icon" href="../../icon-192.png">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../site.css">
+  
+</head>
+<body>
+  <header class="pub-nav"><div class="in">
+    <a class="brand" href="../../"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
+    <nav aria-label="Main"><a href="../../guides/">Guides</a><a href="../../get/">Download</a><a class="btn primary" href="../../">Sign in</a></nav>
+  </div></header>
+  <main class="prose">
+    <p class="meta"><a href="../">Guides</a></p>
+    <h1>How to track your OpenRouter spending</h1>
+    <p class="lede">OpenRouter makes it easy to try any model with one balance, which also makes it easy to lose track of where the balance went. Here's how to see it, and how to put a cap on it.</p>
+    <p class="meta">Updated 23 November 2026 · 5 min read</p>
+
+    <h2>How the money works</h2>
+    <p>You buy credits on OpenRouter, and every request takes the price of the model you used out of that balance. The price depends on the model and on how many tokens went in and came out. A cheap model and an expensive one can differ by a hundred times for the same prompt, so a single tool switching models can change your spend more than doubling your usage would.</p>
+    <p>Because one balance pays for everything, the useful questions are: which key spent it, on which model, and on which day? OpenRouter can answer all three.</p>
+
+    <h2>Check a key's spend with the API</h2>
+    <p>Any OpenRouter API key can ask about itself:</p>
+    <pre><code>curl https://openrouter.ai/api/v1/key \
+  -H "Authorization: Bearer $OPENROUTER_API_KEY"</code></pre>
+    <p>The answer includes, among other fields:</p>
+    <ul>
+      <li><code>usage</code>: everything this key has spent, in credits</li>
+      <li><code>usage_daily</code>, <code>usage_weekly</code> and <code>usage_monthly</code>: the same for recent periods</li>
+      <li><code>limit</code>, <code>limit_remaining</code> and <code>limit_reset</code>: the key's spending cap, if it has one, what's left of it and when it resets</li>
+    </ul>
+    <p>That's enough to answer "what did this tool cost me this week?" without opening the website, as long as each tool has its own key.</p>
+
+    
+
+    <h2>Your whole balance needs a management key</h2>
+    <p>To see your account's total, use <code>GET /api/v1/credits</code>. It returns <code>total_credits</code> (everything you've bought) and <code>total_usage</code> (everything you've spent). The difference is your balance.</p>
+    <p>This endpoint needs a <b>management key</b>. A normal key gets a 403 with "Only management keys can perform this operation". Management keys are a separate kind of key, made for creating and managing your other keys, so they're more powerful than a normal one. Keep one only where you need it, and store it like a password.</p>
+
+    <h2>Put a cap on each key</h2>
+    <p>OpenRouter supports per-key credit limits: an optional spending cap set on an individual API key. When a key reaches its cap, it stops working until the limit resets or you raise it. Your other keys keep going. Two habits make caps really useful:</p>
+    <ul>
+      <li><b>One key per tool or project.</b> Your coding assistant, a side project and a script you're testing each get their own key. Then the per-key figures tell you exactly what each one costs.</li>
+      <li><b>Caps on anything experimental.</b> A script stuck in a loop, or an agent left running overnight, can spend a surprising amount. A small cap on its key turns that into a stopped tool instead of a surprise bill.</li>
+    </ul>
+    <p>Set the cap when you create a key, or edit an existing key in your OpenRouter settings. Check the current options there, since OpenRouter can add new kinds of limits, such as budgets that reset.</p>
+
+    <h2>See where it went: activity</h2>
+    <p>Your OpenRouter account has an activity view, with usage broken down by model and by day. It's the quickest way to spot the one model that's quietly most of your bill.</p>
+    <p>The same breakdown is available from the API's activity endpoint, which returns rows per day and model with tokens, requests and cost. Like the credits endpoint, it needs a management key. A tracker given only a normal key can still show that key's spend from <code>/api/v1/key</code>, just not the per-model detail.</p>
+
+    <h2>Free models count too, in their own way</h2>
+    <p>Free models don't take anything from your balance, but they aren't unlimited. They have a daily allowance of requests. The <code>/api/v1/key</code> answer includes a <code>free_model_daily_requests</code> entry with how many you've used today, the limit and what's left. If a tool suddenly starts failing on a free model, that's the first thing to check.</p>
+    <p>It's also worth knowing when a tool quietly falls back from a free model to a paid one. The activity breakdown by model shows that straight away: a paid model you didn't expect, with a cost next to it.</p>
+
+    <h2>A simple routine</h2>
+    <ol>
+      <li>Give each tool its own key, with a cap you'd be comfortable losing.</li>
+      <li>Once a week, look at activity by model. Swap the most expensive model for a cheaper one wherever it does the job just as well.</li>
+      <li>Top up on purpose rather than with automatic top-ups, at least until you know your usual spend.</li>
+    </ol>
+
+    <div class="cta">
+      <h2>Track it with Limit</h2>
+      <p>Paste an OpenRouter key on Limit's All your AIs page, and your OpenRouter spend shows up next to Claude Code and your other AIs. Any key shows its spend, and a management key also shows models and tokens. <a href="../../">Sign in with Google</a> to try it. It's free.</p>
+    </div>
+    
+  </main>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../../guides/">Guides</a><a href="../../about/">About</a><a href="../../privacy/">Privacy</a><a href="../../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>

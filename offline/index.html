@@ -3,91 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude Usage Monitor</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='8' width='3' height='7' rx='1' fill='%232a78d6'/%3E%3Crect x='6.5' y='4' width='3' height='11' rx='1' fill='%232a78d6'/%3E%3Crect x='12' y='1' width='3' height='14' rx='1' fill='%23eb6834'/%3E%3C/svg%3E">
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon-192.png">
-  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
-  <link rel="stylesheet" href="style.css">
-  <script src="mode.js"></script>
+  <title>Limit</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta http-equiv="refresh" content="0; url=../dashboard/">
+  <link rel="canonical" href="../dashboard/">
+  
 </head>
-<body>
-  <div class="wrap">
-    <header class="top">
-      <div>
-        <h1>Claude Usage Monitor</h1>
-        <div class="sub" id="subtitle">Reading your Claude Code sessions…</div>
-      </div>
-      <span class="spacer"></span>
-      <span class="live" id="live"><i></i><span>Connecting</span></span>
-      <a class="btn ai-link no-offline" id="ai-link" href="/ai"><span class="ai-link-dots" aria-hidden="true"><i></i><i></i><i></i></span>All your AIs</a>
-      <a class="btn primary no-offline" href="/report" target="_blank" rel="noopener">Diagnostic report</a>
-      <button type="button" id="theme" aria-label="Switch color theme">Theme: system</button>
-      <button type="button" class="remote-only" data-action="signout">Sign out</button>
-    </header>
-
-    <p class="offline-note" id="offline-note" role="status"></p>
-    <section class="card spend" id="spend" aria-label="Spend"></section>
-
-    <div class="grid cols-limits" id="limits" style="margin-top:16px"></div>
-
-    <div class="grid cols-2" style="margin-top:16px">
-      <div class="card">
-        <div class="chart-head"><div><h2>Most expensive chats</h2><p class="desc" style="margin:0" id="board-desc">All time, at API prices</p></div></div>
-        <ol class="board" id="board"></ol>
-      </div>
-      <div class="card">
-        <div class="chart-head">
-          <div><h2>What the work costs</h2><p class="desc" style="margin:0">Each reply, by what it did</p></div>
-          <span class="spacer"></span>
-          <div class="seg no-print" role="group" aria-label="Period" id="work-range"></div>
-        </div>
-        <ol class="board work" id="work"></ol>
-      </div>
-    </div>
-
-    <div class="section-title"><h2>Activity</h2><span class="desc">Every API response, counted once.</span></div>
-    <div class="card" id="hourly-card"></div>
-    <div class="card" id="daily-card" style="margin-top:16px"></div>
-    <div class="grid cols-4" id="tiles" style="margin-top:16px"></div>
-
-    <div class="section-title"><h2>Just for fun</h2><span class="desc">Your usage in other words. Rough conversions, explained below.</span></div>
-    <div class="fun" id="fun"></div>
-
-    <div class="section-title"><h2>Diagnostics</h2><span class="desc">What stands out right now, most important first.</span></div>
-    <div class="card"><ul class="diag" id="diagnostics"></ul></div>
-
-    <div class="section-title"><h2>Sessions</h2><span class="desc" id="sessions-desc"></span></div>
-    <div class="card table-wrap" id="sessions"></div>
-
-    <div class="section-title"><h2>Breakdown</h2><span class="desc" id="breakdown-desc"></span></div>
-    <div class="grid cols-2">
-      <div class="card"><h2>By model</h2><p class="desc">Cost, with tokens alongside</p><ol class="board work" id="models"></ol></div>
-      <div class="card"><h2>By project folder</h2><p class="desc">Cost, with chats alongside</p><ol class="board work" id="projects"></ol></div>
-    </div>
-
-    <div class="local-only no-print" id="friends-section">
-      <div class="section-title"><h2>Friends</h2><span class="desc">Friends on Windows, Mac, Android or iPhone, by friend code. Shown on this PC only.</span></div>
-      <div id="friends"></div>
-    </div>
-
-    <div class="local-only no-print">
-      <div class="section-title"><h2>Remote access</h2><span class="desc">Open this dashboard from your phone or another computer.</span></div>
-      <div class="card" id="remote"></div>
-    </div>
-
-    <div class="no-print" id="apps-section">
-      <div class="section-title"><h2>Apps</h2><span class="desc">Usage at a glance on your phone, and a shortcut on this PC.</span></div>
-      <div class="card" id="apps"></div>
-    </div>
-
-    <footer class="foot" id="footer"></footer>
-  </div>
-  <div class="tooltip" id="tooltip" hidden></div>
-  <script src="charts.js"></script>
-  <script src="app.js"></script>
-  <script src="apps.js"></script>
-  <script src="friends.js"></script>
+<body style="font:16px system-ui;padding:24px">
+  <p>The phone app is now the website: <a href="../dashboard/">open Limit</a> and sign in with Google.</p>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../guides/">Guides</a><a href="../about/">About</a><a href="../privacy/">Privacy</a><a href="../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
 </body>
 </html>

@@ -1,17 +1,28 @@
 /* Runs before the page draws.
-   ?app=1          the Android app's Full view: the whole dashboard in a dense phone layout (html.app).
+   ?app=1          the Android app's dense phone layout (html.app).
+   ?app=2          the same inside the app's bottom tabs (1.6 and later): the app has its own
+                   tabs for All your AIs and Friends, and its own Settings (theme, diagnostic
+                   report), so the page hides those buttons and uses the app's fonts (html.shell).
+                   &theme=light|dark sets the theme the app chose before anything is drawn.
    #cloud=<url>    the offline dashboard: the last copy your PC saved to your gist, for when the PC
                    is off or asleep (html[data-offline]). Only gist addresses are accepted. */
 (function () {
   'use strict';
   try {
     var q = new URLSearchParams(location.search);
-    if (q.get('app') === '1') {
-      document.documentElement.classList.add('app');
+    var app = q.get('app');
+    if (app === '1' || app === '2') {
+      var root = document.documentElement;
+      root.classList.add('app');
+      if (app === '2') {
+        root.classList.add('shell');
+        var theme = q.get('theme');
+        if (theme === 'light' || theme === 'dark') root.setAttribute('data-theme', theme);
+      }
       // Keep the phone layout when moving between the dashboard and All your AIs.
       document.addEventListener('DOMContentLoaded', function () {
         var link = document.getElementById('ai-link');
-        if (link) link.href = '/ai?app=1';
+        if (link) link.href = '/ai?app=' + app;
       });
     }
     var m = /(?:^#|&)cloud=([^&]+)/.exec(location.hash);

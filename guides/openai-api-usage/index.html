@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to see your OpenAI API usage (and why it needs an admin key) · Limit</title>
+  <meta name="description" content="Why a normal OpenAI API key is refused when you read usage, how to make an admin key, what the Usage and Costs endpoints return, and how to keep that key safe.">
+  <link rel="icon" href="../../icon-192.png">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../site.css">
+  
+</head>
+<body>
+  <header class="pub-nav"><div class="in">
+    <a class="brand" href="../../"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
+    <nav aria-label="Main"><a href="../../guides/">Guides</a><a href="../../get/">Download</a><a class="btn primary" href="../../">Sign in</a></nav>
+  </div></header>
+  <main class="prose">
+    <p class="meta"><a href="../">Guides</a></p>
+    <h1>How to see your OpenAI API usage (and why it needs an admin key)</h1>
+    <p class="lede">If you've tried to read your OpenAI usage with your normal API key and got "access denied", the key isn't broken. It's the wrong kind. Here's the difference, and how to set up the right one.</p>
+    <p class="meta">Updated 23 November 2026 · 5 min read</p>
+
+    <h2>Two kinds of key</h2>
+    <p>OpenAI keeps two jobs apart:</p>
+    <ul>
+      <li><b>API keys</b> call the models. Project keys start with <code>sk-proj-</code>, and service account keys belong to a project too. They're what your apps and coding tools use.</li>
+      <li><b>Admin keys</b> start with <code>sk-admin-</code>. They manage your organization: members, projects, and reading usage and costs.</li>
+    </ul>
+    <p>That's why a project key gets an HTTP 401 or 403 from the usage endpoints. It isn't allowed to see organization-wide figures. It works the other way round too: OpenAI's documentation says admin keys can't be used for anything except administration endpoints, so you can't use one to call a model. Keep both, each for its own job.</p>
+
+    <h2>Making an admin key</h2>
+    <ol>
+      <li>Sign in at <a href="https://platform.openai.com/settings/organization/admin-keys">platform.openai.com → Settings → Organization → Admin keys</a>. You need to be an owner of the organization. If you can't see the page, ask whoever owns your OpenAI organization.</li>
+      <li>Choose <b>Create new admin key</b> and give it a name you'll recognise later, such as "usage tracking".</li>
+      <li>If you're offered a choice of permissions, read-only access to usage is all a tracker needs. A key that can only read can't change anything if it leaks.</li>
+      <li>Copy the key straight away. Like other OpenAI keys, it's shown once. If you lose it, make a new one and revoke the old one.</li>
+    </ol>
+    <div class="note"><p>An admin key can see your whole organization, every project and every member. Treat it like a password, and never put it in code, a chat with an AI, or a public bug report.</p></div>
+
+    
+
+    <h2>What the usage and costs endpoints give you</h2>
+    <p>With the admin key, two endpoints answer most questions:</p>
+    <ul>
+      <li><code>GET /v1/organization/usage/completions</code> returns token counts in time buckets (for example one per day): input, output and cached tokens and the number of requests. You can group them by model or by project.</li>
+      <li><code>GET /v1/organization/costs</code> returns what you were charged, in dollars, per bucket and line item. This is the number that matches your invoice.</li>
+    </ul>
+    <p>A quick test from a terminal looks like this, with the key in an environment variable rather than typed into the command:</p>
+    <pre><code>curl "https://api.openai.com/v1/organization/costs?start_time=1794787200&amp;limit=7" \
+  -H "Authorization: Bearer $OPENAI_ADMIN_KEY"</code></pre>
+    <p><code>start_time</code> is a Unix timestamp in seconds. The answer is JSON with a <code>data</code> list of buckets. Longer ranges come in pages, so follow the <code>next_page</code> value until there isn't one.</p>
+    <p>Usage and costs measure different things. Usage is what you did, in tokens. Costs is what you pay for it. When they don't seem to agree, it's usually because different models price tokens very differently, or because some costs, such as tools or storage, aren't token-based at all.</p>
+
+    <h2>No code? Use the dashboard</h2>
+    <p>For a one-off look you don't need a key at all. Signed in to the OpenAI platform, the <a href="https://platform.openai.com/usage">Usage page</a> shows your spend and tokens over time, and lets you filter by project and model. It's the same data the endpoints return.</p>
+    <p>The API is for when you want the figures somewhere else: a spreadsheet, a weekly report, or a dashboard that also shows your other AI tools. That's when an admin key earns its keep, because it lets a tool fetch the figures on its own, without you signing in each time.</p>
+
+    <h2>Common errors and what they mean</h2>
+    <table>
+      <thead><tr><th>You see</th><th>Usually means</th></tr></thead>
+      <tbody>
+        <tr><td>401 Unauthorized</td><td>The key is mistyped, revoked, or not an admin key.</td></tr>
+        <tr><td>403 with "insufficient permissions" or "missing scopes"</td><td>A project or service account key, or an admin key without read access to usage.</td></tr>
+        <tr><td>An empty <code>data</code> list</td><td>No usage in that time range, or the key belongs to a different organization than the one you used.</td></tr>
+        <tr><td>Today looks low</td><td>Recent usage can take a little while to appear. Check again later before worrying.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Keeping the key safe</h2>
+    <ul>
+      <li>Store it in an environment variable or a password manager, not in a file inside a project folder.</li>
+      <li>Give it its own name, so you know what to revoke if you stop using a tool.</li>
+      <li>If you think it leaked, revoke it on the same Admin keys page right away. That takes effect at once.</li>
+      <li>Only give it to tools you trust to read usage and nothing else.</li>
+    </ul>
+
+    <div class="cta">
+      <h2>Track it with Limit</h2>
+      <p>On Limit's All your AIs page you paste your admin key once, and your OpenAI spend shows up next to Claude Code and your other AIs. The key is checked with OpenAI before it's saved, and only you can read it. <a href="../../">Sign in with Google</a> to try it. It's free.</p>
+    </div>
+    
+  </main>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../../guides/">Guides</a><a href="../../about/">About</a><a href="../../privacy/">Privacy</a><a href="../../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How to check your Claude Code usage · Limit</title>
+  <meta name="description" content="Every way to see what you've used in Claude Code: the /usage and /context commands, the transcript files on your computer, what the token numbers mean, and tools that add it all up.">
+  <link rel="icon" href="../../icon-192.png">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../site.css">
+  
+</head>
+<body>
+  <header class="pub-nav"><div class="in">
+    <a class="brand" href="../../"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
+    <nav aria-label="Main"><a href="../../guides/">Guides</a><a href="../../get/">Download</a><a class="btn primary" href="../../">Sign in</a></nav>
+  </div></header>
+  <main class="prose">
+    <p class="meta"><a href="../">Guides</a></p>
+    <h1>How to check your Claude Code usage</h1>
+    <p class="lede">Claude Code can tell you a lot about what you've used, if you know where to look. Here are the built-in commands, the files it keeps on your computer, and what the numbers in them mean.</p>
+    <p class="meta">Updated 23 November 2026 · 5 min read</p>
+
+    <h2>Start with /usage</h2>
+    <p>In any Claude Code session, type <code>/usage</code> and press Enter. (<code>/cost</code> is another name for the same command.) What you see depends on how you pay for Claude Code.</p>
+    <ul>
+      <li><b>On a Pro, Max, Ultra, Team or Enterprise plan</b>, it shows bars for your plan limits and a breakdown of what counts against them. This is the number that decides whether you can keep working, so it's the one to watch.</li>
+      <li><b>On API billing</b>, the Session block shows the tokens this session has used and what they cost. Anthropic's documentation describes that block as meant for API users.</li>
+    </ul>
+    <p>If you're on a subscription and also see a dollar figure, read it as "what this would have cost through the API". It isn't a bill. Your plan price stays the same however much of it you use.</p>
+    <div class="note"><p>One thing to check: if the <code>ANTHROPIC_API_KEY</code> environment variable is set on your computer, Claude Code uses that key, and your usage is billed to the API instead of your plan. Anthropic's help pages call this out specifically. <code>/status</code> shows which account you're using.</p></div>
+
+    <h2>Two more commands worth knowing</h2>
+    <p><code>/context</code> draws the current context window as a coloured grid: how much is your conversation, how much is tool definitions and instructions, and how much is free. It matters for usage because every new request sends the whole context again. A chat that has grown to fill most of the window costs far more per message than a fresh one, even though each message looks small to you.</p>
+    <p><code>/status</code> opens Claude Code's settings on the Status tab, with your version, model, account and connection. Use it when the numbers don't look right. A different model or account than you expected explains a lot of surprises.</p>
+    <p>Neither command keeps a history. They tell you about now, so for "what did I use last week?" you need the files below.</p>
+
+    
+
+    <h2>What Claude Code keeps on your computer</h2>
+    <p>Every chat is saved as a transcript in your home folder:</p>
+    <pre><code>~/.claude/projects/&lt;project&gt;/&lt;session&gt;.jsonl</code></pre>
+    <p>On Windows that's <code>%USERPROFILE%\.claude\projects</code>. Each project folder you've worked in gets its own folder, and each chat is one <code>.jsonl</code> file, where every line is one event: a message from you, a reply, a tool call or a tool result. Claude's replies carry a <code>usage</code> block with the token counts for that request.</p>
+    <p>Two things to know before you rely on these files:</p>
+    <ul>
+      <li><b>They're deleted after a while.</b> Claude Code removes transcripts older than the <code>cleanupPeriodDays</code> setting, which is 30 days by default. If you want a longer history, raise it in your Claude Code settings before the old files go.</li>
+      <li><b>They contain your conversations,</b> including any code or secrets that passed through a chat. Don't attach them to a bug report or send them to anyone.</li>
+    </ul>
+
+    <h2>Reading the numbers</h2>
+    <p>Each request's usage block has four counts, and they're priced very differently:</p>
+    <table>
+      <thead><tr><th>Count</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td>Input tokens</td><td>New text sent to the model in this request.</td></tr>
+        <tr><td>Cache writes</td><td>Context stored so later requests can reuse it. These cost a little more than plain input, once.</td></tr>
+        <tr><td>Cache reads</td><td>Context reused from the cache. Much cheaper than input, and usually the biggest count by far.</td></tr>
+        <tr><td>Output tokens</td><td>What the model wrote back, including tool calls. The most expensive tokens, per token.</td></tr>
+      </tbody>
+    </table>
+    <p>Claude Code uses prompt caching automatically, which is why a long chat shows enormous cache-read numbers. That's normal, and much cheaper than resending everything as fresh input. Still, cache reads add up when the context is huge, which is the practical reason to start a new chat for a new task.</p>
+    <p>To turn tokens into dollars, multiply each count by the model's price for that kind of token. Prices are per million tokens and differ a lot between models, so the model matters as much as the token count. A morning on the largest model can cost several times the same work on a smaller one.</p>
+
+    <h2>Tools that add it up for you</h2>
+    <p>Adding up thousands of lines by hand isn't realistic, so several tools read the same transcript files for you:</p>
+    <ul>
+      <li><b>Command-line tools</b> such as ccusage print daily or monthly totals in your terminal. They're free, quick, and good for a monthly look back.</li>
+      <li><b>Dashboards</b> keep watching the files and show totals as you work, often with charts per day, per project and per model.</li>
+    </ul>
+    <p>Whichever you use, the figures are only as complete as the files. A tool can't count a chat Claude Code has already cleaned up, which is another reason to raise <code>cleanupPeriodDays</code> if history matters to you.</p>
+
+    <h2>A quick routine</h2>
+    <ol>
+      <li>Glance at <code>/usage</code> when you start a long piece of work, so you know how much room you have.</li>
+      <li>Check <code>/context</code> when a chat starts to feel slow or long, and start fresh if most of the window is used.</li>
+      <li>Once a week, look at your totals per day and per project, to spot the one task that used half your allowance.</li>
+    </ol>
+
+    <div class="cta">
+      <h2>Track it with Limit</h2>
+      <p>Limit reads these same files on your computer and shows what every chat, day and model cost, next to your plan limits, on any phone or computer. <a href="../../">Sign in with Google</a> and <a href="../../get/">install the app</a> to try it. It's free.</p>
+    </div>
+    
+  </main>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../../guides/">Guides</a><a href="../../about/">About</a><a href="../../privacy/">Privacy</a><a href="../../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ways to cut your AI coding bill · Limit</title>
+  <meta name="description" content="Practical habits that lower what Claude Code and other AI coding tools cost: clearing and compacting chats, choosing models, short instructions, planning first, and caps on API keys.">
+  <link rel="icon" href="../../icon-192.png">
+  <meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../site.css">
+  
+</head>
+<body>
+  <header class="pub-nav"><div class="in">
+    <a class="brand" href="../../"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
+    <nav aria-label="Main"><a href="../../guides/">Guides</a><a href="../../get/">Download</a><a class="btn primary" href="../../">Sign in</a></nav>
+  </div></header>
+  <main class="prose">
+    <p class="meta"><a href="../">Guides</a></p>
+    <h1>Ways to cut your AI coding bill</h1>
+    <p class="lede">Most of what AI coding costs comes from a handful of habits, not from how much you get done. Change those, and the same work costs less, whether you pay per token or against a plan's limits.</p>
+    <p class="meta">Updated 23 November 2026 · 6 min read</p>
+
+    <h2>Measure first</h2>
+    <p>Before changing anything, find out where the cost actually goes. In Claude Code, <code>/usage</code> shows your plan limits or your session's cost, and <code>/context</code> shows how full the current chat is. Over a week, look at your totals per day and per chat. Usually one or two chats account for a large share, and they nearly always have something in common: they ran for a long time, on the biggest model, with a huge context.</p>
+    <p>The rest of this guide is about those three things.</p>
+
+    <h2>Keep chats short and focused</h2>
+    <p>Every message you send carries the whole conversation with it. In a fresh chat that's cheap. Two hours in, with files, test output and earlier attempts piled up, each small question costs many times more.</p>
+    <ul>
+      <li><b>Clear between tasks.</b> When you move on to something unrelated, use <code>/clear</code>. The old context won't help with the new task, and it makes every request bigger.</li>
+      <li><b>Compact long ones.</b> When you need to keep going on the same task, <code>/compact</code> swaps the history for a summary. Tell it what matters, for example <code>/compact keep the database schema and the failing test</code>.</li>
+      <li><b>Keep noisy output out.</b> Long logs and full test runs end up in the context. Ask for just the failures, or use hooks that filter verbose output before Claude sees it.</li>
+    </ul>
+
+    
+
+    <h2>Use the right model for the job</h2>
+    <p>Model choice is the biggest single lever. Prices per token differ several times over between the smallest and largest models. Anthropic's own advice for Claude Code is to use Sonnet for most coding and save Opus for complex architecture decisions or problems that need many steps of reasoning.</p>
+    <ul>
+      <li>Switch with <code>/model</code> when the task changes, not just once at the start.</li>
+      <li>Give simple subagents a small model, such as Haiku, if you set up your own.</li>
+      <li>Turn extended thinking down with <code>/effort</code> for routine edits. Thinking tokens are billed like any others.</li>
+    </ul>
+
+    <h2>Trim what's sent with every request</h2>
+    <p>Some text goes with every single request, so it's worth keeping lean:</p>
+    <ul>
+      <li><b>CLAUDE.md.</b> Anthropic suggests keeping it under 200 lines. Move instructions you only need for one kind of work, such as release steps or a migration checklist, into skills that load only when needed.</li>
+      <li><b>MCP servers.</b> Each connected server adds its tool descriptions to the context. Disconnect the ones you aren't using with <code>/mcp</code>, and where a simple command-line tool does the same job, prefer it.</li>
+    </ul>
+
+    <h2>Say what you want, then check early</h2>
+    <p>Vague requests lead to exploring, guessing and redoing, and all of that is paid for. A few habits cut it down:</p>
+    <ul>
+      <li><b>Be specific.</b> Name the file, the function and what "done" looks like. "Add input validation to <code>signup()</code> in <code>auth.ts</code> and a test for an empty email" costs far less than "improve the signup code".</li>
+      <li><b>Plan first.</b> Plan mode (Shift+Tab) has Claude look around and propose an approach before editing anything. Fixing a plan is cheap. Undoing a wrong implementation isn't.</li>
+      <li><b>Stop it early.</b> If a reply heads the wrong way, press Escape or use <code>/rewind</code> rather than waiting for it to finish.</li>
+      <li><b>Give it a way to check its work.</b> A test to pass or a command to run lets the model confirm it's done, instead of you going back and forth.</li>
+    </ul>
+
+    <h2>Be careful with parallel agents</h2>
+    <p>Subagents and agent teams keep your main chat tidy, but each one makes its own requests, and they all count. A team of four agents can use four times what one would. Use them when the work really splits into independent parts, keep teams small, and use Sonnet for teammates.</p>
+
+    <h2>Outside Claude Code</h2>
+    <p>If you also pay for APIs directly, through OpenAI or OpenRouter for example:</p>
+    <ul>
+      <li><b>One key per tool, with a cap.</b> A spending limit on each key turns a runaway script into a stopped tool instead of a surprise bill.</li>
+      <li><b>Cheaper models for bulk work.</b> Summarising, tagging and simple extraction rarely need the most capable model.</li>
+      <li><b>Batch what can wait.</b> Many providers offer a batch option for requests that don't need an answer right away, at a lower price.</li>
+      <li><b>Look at the bill weekly.</b> Spend creeps up quietly. A weekly look catches it while it's still small.</li>
+    </ul>
+
+    <div class="cta">
+      <h2>Track it with Limit</h2>
+      <p>Limit shows what each Claude Code chat costs and how fast you're using your plan limits, with your OpenAI, OpenRouter and other AI spend on the same page. That makes the expensive habits easy to spot. <a href="../../">Sign in with Google</a> to try it. It's free.</p>
+    </div>
+    
+  </main>
+  <footer class="site-foot"><div class="in">
+    <nav aria-label="About this site"><a href="../../guides/">Guides</a><a href="../../about/">About</a><a href="../../privacy/">Privacy</a><a href="../../contact/">Contact</a></nav>
+    <p>Limit is an independent project, not made by or affiliated with Anthropic. Claude and Claude Code are trademarks of Anthropic.</p>
+  </div></footer>
+</body>
+</html>
