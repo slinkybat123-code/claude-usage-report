@@ -2,7 +2,7 @@
 // You see a friend's card (totals and limits) because they shared it with you (shares/{them}_{you}).
 import {
   requireUser, db, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch,
-  serverTimestamp, deleteField, esc, ago, usd, compact, millis, avatar, emailOf, nameOf, problem, ROOT,
+  serverTimestamp, deleteField, esc, ago, usd, compact, millis, avatar, emailOf, nameOf, problem, ROOT, counter, countUp,
 } from './cloud.js';
 import { sendInvite, watchFriends } from './friends-data.js';
 
@@ -62,7 +62,7 @@ function friendCard(uid, i) {
   seen.add(uid);
   return `<article class="card friend${enter}" style="--i:${i}"${opens(`friend:${uid}`)}>
     <div class="friend-top">${avatar(name, photo, 'lg')}<div class="who"><b>${esc(name)}</b><span>${esc(status)}</span></div><span class="dot${s.active ? ' on' : ''}" title="${s.active ? 'Active' : 'Not active'}"></span></div>
-    <dl><div><dt>Today</dt><dd>${usd(s.today)}</dd></div><div><dt>7 days</dt><dd>${usd(s.week)}</dd></div><div><dt>30 days</dt><dd>${usd(s.month)}</dd></div></dl>
+    <dl><div><dt>Today</dt><dd>${counter(`${uid}.today`, s.today)}</dd></div><div><dt>7 days</dt><dd>${counter(`${uid}.week`, s.week)}</dd></div><div><dt>30 days</dt><dd>${counter(`${uid}.month`, s.month)}</dd></div></dl>
     ${limits ? `<div class="limits">${limits}</div>` : ''}
     ${s.topChats.length ? `<div class="top-chats"><span class="label">Most expensive chats</span><ol>${s.topChats.map((t) => `<li><span>${esc(t.title || 'Untitled chat')}</span><b>${usd(t.cost)}</b></li>`).join('')}</ol></div>` : ''}
     ${s.ais.length ? `<div class="ais">${s.ais.map(([id, a]) => `<span><i style="background:${AI_COLORS[id] || 'var(--axis)'}"></i>${esc(a.name)} ${usd(a.month)}</span>`).join('')}</div>` : ''}
@@ -110,8 +110,10 @@ function renderBoard() {
   $('board-section').hidden = !following.length || !rows.length;
   rows.sort((a, b) => b.today - a.today);
   const top = Math.max(0.01, ...rows.map((r) => r.today));
-  $('today-board').innerHTML = rows.map((r, i) => `<li class="${r.uid === me.uid ? 'me' : ''}"${opens(`friend:${r.uid}`)}><span class="rank">${i + 1}</span>${avatar(r.name, r.photo)}<span>${esc(r.name)}</span><b>${usd(r.today)}</b><span class="bar"><span data-w="${(r.today / top) * 100}"></span></span></li>`).join('');
+  $('today-board').innerHTML = rows.map((r, i) => `<li class="${r.uid === me.uid ? 'me' : ''}"${opens(`friend:${r.uid}`)}><span class="rank">${i + 1}</span>${avatar(r.name, r.photo)}<span>${esc(r.name)}</span><b>${counter(`board.${r.uid}`, r.today)}</b><span class="bar"><span data-w="${(r.today / top) * 100}"></span></span></li>`).join('');
   requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll('#today-board [data-w]').forEach((b) => (b.style.width = `${b.dataset.w}%`))));
+  countUp($('friends'));
+  countUp($('today-board'));
   if (window.Sheet) window.Sheet.refresh();
 }
 

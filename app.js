@@ -82,7 +82,7 @@
       }
       if (rose) el.classList.add('up');
       const t0 = performance.now();
-      const dur = booted ? 700 : 1100;
+      const dur = booted ? 700 : 1500; // on open, everything counts up from zero
       const step = (now) => {
         const p = Math.min(1, (now - t0) / dur);
         const v = from + (to - from) * (1 - Math.pow(1 - p, 4));
@@ -241,15 +241,34 @@
         <div${opens('lastHour')}><dt>Last hour</dt><dd>${num('spend.hour', S.lastHour)}<small>${snap.activeSessions} chat${snap.activeSessions === 1 ? '' : 's'} active now</small></dd></div>
         <div${opens('projection')}><dt>Next 30 days at this pace</dt><dd>${num('spend.proj', S.projected30Days)}<small>${usd(S.dailyAverage)} a day, 7-day average</small></dd></div>
       </dl>
+      ${highlightsHtml()}
       <div class="spend-trend" data-spark>
-        <div class="cap"><span>Cost per day, last 30 days</span><span>${S.topDay ? `Peak ${usd(S.topDay.cost)} on ${shortDate(S.topDay.t)}` : ''}</span></div>
+        <div class="cap"><span>Cost per day, last 30 days · click a day for its breakdown</span><span>${S.topDay ? `Peak ${usd(S.topDay.cost)} on ${shortDate(S.topDay.t)}` : ''}</span></div>
         <div class="spark-box">${C.sparkArea(values, { title: 'Cost per day, last 30 days' })}
+        <span class="spark-cursor" hidden></span><span class="spark-hover" hidden></span>
         <span class="spark-dot" style="left:${(954 / 960) * 100}%;top:${((90 - (last / max) * 80) / 96) * 100}%"></span></div>
       </div>
       <div class="spend-mix">
         <div class="mix" role="img" aria-label="Spend by token type">${mix.filter((m) => m.v > 0).map((m) => fill(`mix.${m.k}`, m.v, 'flexGrow', `background:${m.s.color}`)).join('')}</div>
         <div class="mix-legend">${mix.map((m) => `<span><i style="background:${m.s.color}"></i>${esc(m.s.label)} <b>${usd(m.v)}</b> · ${pct(m.v, S.allTime)}%</span>`).join('')}</div>
       </div>`;
+  }
+
+  /** A row of quick figures: this week against the last, streak, busiest weekday and hour, yesterday. */
+  function highlightsHtml() {
+    if (!window.Insights || !window.Insights.highlights) return '';
+    const h = window.Insights.highlights(snap);
+    const ch = h.week.change;
+    const trend = ch == null ? '' : `<span class="delta ${ch > 0 ? 'more' : ch < 0 ? 'less' : ''}" title="Against the 7 days before (${usd(h.week.prev)})">${ch > 0 ? '▲' : ch < 0 ? '▼' : '='} ${num('hl.change', Math.abs(ch), 'pct')}</span>`;
+    const hour = h.peakHour == null ? null : new Date(2000, 0, 1, h.peakHour).toLocaleTimeString([], { hour: 'numeric' });
+    const chips = [
+      `<div class="hl"><span class="hl-k">Last 7 days</span><span class="hl-v">${num('hl.week', h.week.cost)} ${trend}</span></div>`,
+      `<div class="hl"><span class="hl-k">Yesterday</span><span class="hl-v">${num('hl.yesterday', h.yesterday)}</span></div>`,
+      `<div class="hl"><span class="hl-k">Streak</span><span class="hl-v">${num('hl.streak', h.streak, 'int')} <small>day${h.streak === 1 ? '' : 's'} in a row</small></span></div>`,
+      h.busiestWeekday ? `<div class="hl"><span class="hl-k">Busiest day</span><span class="hl-v">${esc(h.busiestWeekday)}s</span></div>` : '',
+      hour ? `<div class="hl"><span class="hl-k">Busiest hour</span><span class="hl-v">Around ${esc(hour)}</span></div>` : '',
+    ];
+    return `<div class="highlights">${chips.join('')}</div>`;
   }
 
   function renderLimits() {
@@ -438,7 +457,8 @@
     const ks = keys();
     const desc = `${metric === 'cost' ? 'Cost' : 'Tokens'} ${what}, all chats`;
     const svg = C.stackedColumns(rows, { keys: ks, title, get: valueOf, tick: metric === 'cost' ? axisUsd : compact, ...opts })
-      .replace(/<g class="col" data-i="(\d+)"/g, '<g class="col" data-i="$1" style="--c:$1"');
+      // Each day of the 30-day chart opens that day's breakdown.
+      .replace(/<g class="col" data-i="(\d+)"/g, (_, i) => `<g class="col" data-i="${i}" style="--c:${i}"${id === 'daily-card' && rows[i] && rows[i].requests > 0 ? opens(`day:${rows[i].t}`) : ''}`);
     const seg = [['cost', 'Cost'], ['tokens', 'Tokens'], ['nocache', 'Tokens, no cache reads']]
       .map(([k, label]) => `<button type="button" data-action="metric-${k}" aria-pressed="${metric === k}">${label}</button>`).join('');
     const head = `<div class="chart-head"><div><h2>${esc(title)}</h2><p class="desc" style="margin:0">${esc(desc)}</p></div><span class="spacer"></span>${C.legend(ks)}
@@ -679,15 +699,34 @@
     if (window.Sheet) window.Sheet.refresh();
     const signout = document.querySelector('[data-action="signout"]');
     if (signout) signout.hidden = !(snap.remote && snap.remote.signIn);
-    if (!booted && !CALM) {
-      // First paint only: cards rise in order, columns grow, the trend line draws.
-      document.querySelectorAll('.wrap > .card, .wrap > .grid > .card, .wrap > .section-title, .wrap > div > .section-title, .wrap > div > .card')
-        .forEach((el, i) => el.style.setProperty('--i', Math.min(i, 14)));
-      document.body.classList.add('boot');
-      setTimeout(() => document.body.classList.remove('boot'), 2400);
+    window.dispatchEvent(new Event('limit-ready')); // the opening logo (splash.js) can go now
+    if (!booted && window.LimitSplash && !window.LimitSplash.done) {
+      // Still behind the logo: everything sits at zero and starts moving once the page shows.
+      if (!holding) {
+        holding = true;
+        window.addEventListener('limit-splash-done', () => {
+          holding = false;
+          bootIn();
+          animate();
+          booted = true;
+        }, { once: true });
+      }
+      return;
     }
+    if (holding) return;
+    if (!booted) bootIn();
     animate();
     booted = true;
+  }
+  let holding = false;
+
+  /** First paint only: cards rise in order, columns grow from zero, the trend line rises and draws. */
+  function bootIn() {
+    if (CALM) return;
+    document.querySelectorAll('.wrap > .card, .wrap > .grid > .card, .wrap > .section-title, .wrap > div > .section-title, .wrap > div > .card, .wrap > div > .grid > .card')
+      .forEach((el, i) => el.style.setProperty('--i', Math.min(i, 14)));
+    document.body.classList.add('boot');
+    setTimeout(() => document.body.classList.remove('boot'), 2600);
   }
 
   // Countdowns and "x ago" tick locally between snapshots.
@@ -758,14 +797,37 @@
     tip.style.left = `${x / z}px`;
     tip.style.top = `${y / z}px`;
   }
+  /** Which day of the trend line the pointer is over. */
+  function sparkDay(spark, ev) {
+    const box = spark.querySelector('svg').getBoundingClientRect();
+    const days = snap.series.daily;
+    const i = Math.max(0, Math.min(days.length - 1, Math.round((((ev.clientX - box.left) / box.width) * 960 - 6) / 948 * (days.length - 1))));
+    return { i, d: days[i], days };
+  }
+  function sparkCursor(spark, i, days) {
+    const cur = spark.querySelector('.spark-cursor');
+    const dot = spark.querySelector('.spark-hover');
+    if (!cur || !dot) return;
+    const max = Math.max(1e-9, ...days.map((x) => x.cost));
+    const left = `${((6 + (i / Math.max(1, days.length - 1)) * 948) / 960) * 100}%`;
+    cur.hidden = dot.hidden = false;
+    cur.style.left = dot.style.left = left;
+    dot.style.top = `${((90 - (days[i].cost / max) * 80) / 96) * 100}%`;
+  }
+  const hideSparkCursor = () => document.querySelectorAll('.spark-cursor, .spark-hover').forEach((el) => (el.hidden = true));
+  document.addEventListener('click', (ev) => {
+    const spark = snap && ev.target.closest && ev.target.closest('[data-spark]');
+    if (!spark || !window.Sheet) return;
+    const { d } = sparkDay(spark, ev);
+    if (d && d.requests > 0) window.Sheet.open(`day:${d.t}`);
+  });
   document.addEventListener('mousemove', (ev) => {
     if (!snap || !ev.target.closest) return (tip.hidden = true);
     const spark = ev.target.closest('[data-spark]');
+    if (!spark) hideSparkCursor();
     if (spark) {
-      const box = spark.querySelector('svg').getBoundingClientRect();
-      const days = snap.series.daily;
-      const i = Math.max(0, Math.min(days.length - 1, Math.round((((ev.clientX - box.left) / box.width) * 960 - 6) / 948 * (days.length - 1))));
-      const d = days[i];
+      const { i, d, days } = sparkDay(spark, ev);
+      sparkCursor(spark, i, days);
       tip.innerHTML = `<div class="tt-title">${esc(new Date(d.t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }))}</div>
         <div class="tt-row"><b>Cost</b><span><b>${usd(d.cost)}</b></span></div><div class="tt-row">Replies<span>${full(d.requests)}</span></div><div class="tt-row">Tokens<span>${compact(d.total)}</span></div>`;
       return place(ev);

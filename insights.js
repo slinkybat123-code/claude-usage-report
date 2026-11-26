@@ -646,14 +646,78 @@
     };
   }
 
+  /** The small figures under the spend card: this week against the last, streak, busiest weekday and hour. */
+  function highlights(snap) {
+    const daily = (snap.series && snap.series.daily) || [];
+    const hourly = (snap.series && snap.series.hourly) || [];
+    const sum = (rows) => Math.round(rows.reduce((s, d) => s + (d.cost || 0), 0) * 100) / 100;
+    const cost = sum(daily.slice(-7));
+    const prev = sum(daily.slice(-14, -7));
+    const week = { cost, prev, change: prev > 0 ? Math.round(((cost - prev) / prev) * 100) : null };
+    // Days in a row with replies, counting back from today (today with nothing yet doesn't break it).
+    let streak = 0;
+    let i = daily.length - 1;
+    if (i >= 0 && !(daily[i].requests > 0)) i--;
+    for (; i >= 0 && daily[i].requests > 0; i--) streak++;
+    const byDay = new Map();
+    for (const d of daily) {
+      if (!(d.requests > 0)) continue;
+      const name = new Date(d.t).toLocaleDateString('en-US', { weekday: 'long' });
+      const a = byDay.get(name) || { cost: 0, n: 0 };
+      a.cost += d.cost || 0;
+      a.n++;
+      byDay.set(name, a);
+    }
+    let busiestWeekday = null;
+    let best = 0;
+    for (const [name, a] of byDay) if (a.cost / a.n > best) { best = a.cost / a.n; busiestWeekday = name; }
+    if (byDay.size < 2) busiestWeekday = null;
+    const byHour = new Array(24).fill(0);
+    for (const h of hourly) byHour[new Date(h.t).getHours()] += h.cost || 0;
+    const top = Math.max(...byHour);
+    return { week, streak, busiestWeekday, peakHour: top > 0 ? byHour.indexOf(top) : null, yesterday: daily.length > 1 ? daily[daily.length - 2].cost || 0 : 0 };
+  }
+
+  /** One day from the 30-day chart. */
+  function dayDetail(snap, id) {
+    const daily = (snap.series && snap.series.daily) || [];
+    const d = daily.find((x) => String(x.t) === String(id));
+    if (!d) return null;
+    const used = daily.filter((x) => x.requests > 0);
+    const avg = used.length ? used.reduce((s, x) => s + x.cost, 0) / used.length : 0;
+    const types = [['Cache read', 'costCacheRead'], ['Cache write', 'costCacheWrite'], ['Input', 'costInput'], ['Output', 'costOutput']]
+      .map(([label, k]) => ({ label, value: d[k] || 0, fmt: 'usd' }))
+      .filter((r) => r.value > 0);
+    const top = Math.max(1e-9, ...types.map((r) => r.value));
+    types.forEach((r) => (r.share = r.value / top));
+    let text = 'No replies this day.';
+    if (d.requests > 0 && avg > 0) {
+      const ratio = d.cost / avg;
+      text = ratio >= 1.15 ? `${ratio >= 2 ? `${ratio.toFixed(1)} times` : `${Math.round((ratio - 1) * 100)}% above`} your average day ($${avg.toFixed(2)}).`
+        : ratio <= 0.85 ? `${Math.round((1 - ratio) * 100)}% below your average day ($${avg.toFixed(2)}).`
+        : `About your average day ($${avg.toFixed(2)}).`;
+    }
+    return {
+      title: new Date(d.t).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
+      subtitle: 'All chats on this day',
+      stats: [
+        { label: 'Spent', value: d.cost || 0, fmt: 'usd' },
+        { label: 'Replies', value: d.requests || 0, fmt: 'int' },
+        { label: 'Tokens', value: d.total || 0, fmt: 'compact' },
+      ],
+      sections: [{ title: 'Compared with your other days', kind: 'text', text }, { title: 'Cost by token type', kind: 'bars', rows: types }].filter((s) => s.kind === 'text' || s.rows.length),
+      tips: [],
+    };
+  }
+
   const KINDS = {
     window: windowDetail, projection: projectionDetail, lastHour: lastHourDetail, limit: limitDetail, chat: chatDetail,
-    work: workDetail, model: modelDetail, project: projectDetail, prompts: promptsDetail, prompt: promptDetail,
+    work: workDetail, model: modelDetail, project: projectDetail, prompts: promptsDetail, prompt: promptDetail, day: dayDetail,
   };
   function detail(snap, ref) {
     const fn = ref && KINDS[ref.type];
     return fn && snap ? fn(snap, ref.id) : null;
   }
 
-  return { detail, aiDetail, friendDetail, friendStrip, friendsFromCodes, cardFromSnapshot, soFarText, prettyModel, promptItems, tipsFor };
+  return { detail, highlights, aiDetail, friendDetail, friendStrip, friendsFromCodes, cardFromSnapshot, soFarText, prettyModel, promptItems, tipsFor };
 });

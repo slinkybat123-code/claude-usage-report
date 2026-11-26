@@ -28,6 +28,7 @@ async function showNoPc() {
   const linked = await getDocs(query(collection(db, 'devices'), where('owner', '==', user.uid))).then((s) => s.size, () => 0);
   $('subtitle').textContent = linked ? 'Your computer is linked. Its first figures arrive a minute or two after it is on.' : 'No computer linked yet';
   live(linked ? 'Waiting for your computer' : 'No computer yet');
+  window.dispatchEvent(new Event('limit-ready'));
 }
 
 function draw() {
@@ -72,7 +73,7 @@ onSnapshot(
     renderPicker();
     draw();
   },
-  () => live('Could not load your figures'),
+  () => { live('Could not load your figures'); window.dispatchEvent(new Event('limit-ready')); },
 );
 
 // ---------- friends at the top: a strip of cards (arrows on a computer, swipe on a phone) ----------

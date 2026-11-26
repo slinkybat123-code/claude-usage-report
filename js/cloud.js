@@ -201,3 +201,34 @@ export function problem(e) {
   if (code === 'auth/network-request-failed') return 'Can\'t reach Google. Check your connection.';
   return (e && e.message) || String(e);
 }
+
+// ---------- counting figures: dollar amounts count up from zero on open, then from what was shown ----------
+const counted = new Map(); // key -> the value now on screen
+const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/** A dollar figure that countUp() animates. key: stable id, so a redraw counts from the old value. */
+export function counter(key, value) {
+  if (value == null || !Number.isFinite(Number(value))) return usd(null);
+  const from = counted.has(key) ? counted.get(key) : 0;
+  return `<span class="count" data-count="${Number(value)}" data-key="${esc(key)}">${usd(from)}</span>`;
+}
+/** Runs every counter under root (waits for the opening logo to go first). */
+export function countUp(root = document) {
+  const run = () => root.querySelectorAll('[data-count]').forEach((el) => {
+    const key = el.dataset.key;
+    const to = Number(el.dataset.count);
+    const from = counted.has(key) ? counted.get(key) : 0;
+    counted.set(key, to);
+    el.removeAttribute('data-count');
+    if (calmMotion() || from === to) return void (el.textContent = usd(to));
+    const t0 = performance.now();
+    const dur = from === 0 ? 1300 : 700;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      el.textContent = usd(from + (to - from) * (1 - Math.pow(1 - p, 4)));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+  if (window.LimitSplash && !window.LimitSplash.done) window.addEventListener('limit-splash-done', run, { once: true });
+  else run();
+}
