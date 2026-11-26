@@ -38,15 +38,19 @@ async function showRequest(code) {
   } catch {
     link = null;
   }
-  if (!link) return approveBox(`<h2>Link code ${esc(pretty(code))} has expired or was already used</h2><p class="desc">Codes last 20 minutes. On your computer, open <b>Limit</b> from the Start menu (or Applications on a Mac) to get a new one.</p>`);
+  if (!link) return approveBox(`<h2>That request has expired or was already used</h2><p class="desc">Requests last 20 minutes. On your computer, open <b>Limit</b> from the Start menu (or Applications on a Mac) and it asks again.</p>`);
   const phone = link.kind === 'phone';
   if (link.owner === user.uid) return approveBox(`<h2>${esc(link.name)} is linked</h2><p class="desc">${phone ? 'The Limit app on it shows your figures in a few seconds.' : 'It sends its figures within a minute or two.'}</p>`);
   if (link.owner) return approveBox(`<h2>That ${phone ? 'phone' : 'computer'} is already linked to another account</h2><p class="desc">If it's yours, unlink it there first, or ${phone ? 'unlink it in the app\'s Settings' : 'reinstall'} to get a new code.</p>`);
-  approveBox(`<h2>Link ${esc(link.name || (phone ? 'this phone' : 'this computer'))} to your account?</h2>
-    <p class="desc">${esc(link.platform || (phone ? 'A phone' : 'A computer'))} · code <span class="code">${esc(pretty(code))}</span>. ${phone
-    ? `The Limit app on it will show the figures your computers send to ${esc(user.email)}, and the friends who share with you. It can only read them, never change them. Only link a phone you just opened Limit on.`
-    : `It will send its Claude Code figures to ${esc(user.email)}. Only link a computer you just installed Limit on.`}</p>
-    <div class="row-actions" style="margin-top:14px"><button class="primary" type="button" id="do-link">Link</button><button type="button" id="not-mine">It's not mine</button></div>
+  const what = phone ? 'phone' : 'computer';
+  approveBox(`<h2>Is this your ${what}?</h2>
+    <div class="device-ask">${phone ? PHONE_ICON : PC_ICON}<div><b>${esc(link.name || `Your ${what}`)}</b><span>${esc(link.platform || '')}${link.platform ? ' · ' : ''}${phone ? 'Limit app just opened on it' : 'Limit just installed on it'}</span></div></div>
+    <p class="desc">${phone
+    ? `Say yes and the Limit app on it shows your figures and friends from ${esc(user.email)}. It can only look, never change anything.`
+    : `Say yes and it sends its Claude Code usage to your account (${esc(user.email)}), so you can see it here and on your phone. That name is what your ${what} calls itself.`}
+    Only say yes if you just set Limit up on it yourself.</p>
+    <div class="row-actions" style="margin-top:14px"><button class="primary" type="button" id="do-link">Yes, it's mine</button><button type="button" id="not-mine">No</button></div>
+    <p class="desc" style="margin-top:10px;font-size:12px">Check code: <b>${esc(pretty(code))}</b> (also shown on the ${what})</p>
     <p class="msg bad" id="link-err" hidden></p>`);
   $('do-link').addEventListener('click', async () => {
     $('do-link').disabled = true;
@@ -57,8 +61,8 @@ async function showRequest(code) {
       await b.commit();
       history.replaceState(null, '', location.pathname);
       approveBox(phone
-        ? `<h2>Linked ${esc(link.name || 'your phone')}</h2><p class="desc">Go back to the Limit app: it moves on by itself in a few seconds.</p>`
-        : `<h2>Linked ${esc(link.name || 'your computer')}</h2><p class="desc">Its first figures arrive in a minute or two. Open <a href="../dashboard/">Claude Code</a> to watch them come in.</p>`);
+        ? `<h2>Done: ${esc(link.name || 'your phone')} is added</h2><p class="desc">Go back to the Limit app. It moves on by itself in a few seconds.</p>`
+        : `<h2>Done: ${esc(link.name || 'your computer')} is added</h2><p class="desc">You can close this tab. Its figures arrive in a minute or two; open <a href="../dashboard/">Claude Code</a> to watch them come in, here or on your phone.</p>`);
     } catch (e) {
       $('do-link').disabled = false;
       const err = $('link-err');
@@ -68,7 +72,7 @@ async function showRequest(code) {
   });
   $('not-mine').addEventListener('click', () => {
     history.replaceState(null, '', location.pathname);
-    approveBox('<h2>Not linked</h2><p class="desc">Nothing was changed. The code expires by itself.</p>');
+    approveBox('<h2>Not added</h2><p class="desc">Nothing was changed. The request expires by itself.</p>');
   });
 }
 

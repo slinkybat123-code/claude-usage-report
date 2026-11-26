@@ -240,3 +240,45 @@ button.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--critic
 .account-card .err { color: var(--critical-text); font-size: 14px; margin: 12px 0 0; }
 .signin .done { color: var(--good-text); font-size: 14px; margin: 14px 0 0; }
 
+
+/* The theme switch lives in the menu on every page; the dashboard's own copy would only disagree with it. */
+html[data-hosted] header.top #theme { display: none; }
+
+
+/* ---------- Friends: a small Add button at the top right, and its dialog (QR code, link, email) ---------- */
+.page-head:has(.add-friend-btn) { flex-wrap: nowrap; align-items: flex-start; }
+.page-head .add-friend-btn { margin-left: auto; flex: none; white-space: nowrap; font-size: 13px; padding: 6px 12px; min-height: 34px; border-radius: 999px; }
+.add-dialog { width: min(520px, calc(100vw - 32px)); }
+.add-dialog .add-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 0; }
+.add-dialog .icon-btn { font-size: 20px; line-height: 1; padding: 4px 10px; min-height: 36px; border: 0; background: transparent; }
+.add-dialog .qr-block { display: grid; grid-template-columns: 168px 1fr; gap: 16px; padding: 14px 20px; align-items: start; }
+.add-dialog .qr-block p { margin: 0 0 8px; font-size: 14px; line-height: 1.5; }
+.add-dialog .qr { width: 168px; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #fff; display: grid; place-items: center; border: 1px solid var(--ring); }
+.add-dialog .qr svg { width: 100%; height: 100%; display: block; }
+.add-dialog .qr .desc { padding: 12px; text-align: center; color: #444; }
+.add-dialog form { border-top: 1px solid var(--ring); padding: 16px 20px 20px; }
+.add-dialog form label { flex-basis: 100%; }
+.add-dialog > .msg { padding: 0 20px 16px; margin: 0; }
+@media (max-width: 480px) {
+  .add-dialog .qr-block { grid-template-columns: 1fr; justify-items: center; text-align: center; }
+  .add-dialog .row-actions { justify-content: center; }
+}
+.joined { margin: 0 0 18px; }
+.joined p { margin: 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.switch-row { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--ring); cursor: pointer; font-size: 14px; line-height: 1.45; }
+.switch-row input { width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--accent-strong); flex: none; }
+.switch-row .desc { font-size: 13px; color: var(--muted); }
+.friend .top-chats { display: grid; gap: 6px; }
+.friend .top-chats .label { font-size: 12px; color: var(--muted); }
+.friend .top-chats ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; counter-reset: chat; }
+.friend .top-chats li { display: flex; gap: 10px; font-size: 13px; counter-increment: chat; }
+.friend .top-chats li::before { content: counter(chat); color: var(--muted); width: 1.2em; flex: none; font-variant-numeric: tabular-nums; }
+.friend .top-chats li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend .top-chats li b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.friend, .friend .top-chats, .friend .top-chats ol, .friend .top-chats li { min-width: 0; }
+.friend .top-chats ol { grid-template-columns: minmax(0, 1fr); }
+
+/* Computers: the device asking to be added, by name. */
+.device-ask { display: flex; gap: 12px; align-items: center; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--ring); border-radius: 12px; background: var(--surface-2); }
+.device-ask b { display: block; font-size: 16px; }
+.device-ask span { font-size: 13px; color: var(--muted); }

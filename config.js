@@ -1,2 +1,2 @@
-window.FIREBASE_CONFIG = {"apiKey":"AIzaSyCMoBbVktHtVY2V7kg3jb0kUT9lDhxOFYc","authDomain":"limit-1fda7.firebaseapp.com","projectId":"limit-1fda7","storageBucket":"limit-1fda7.firebasestorage.app","messagingSenderId":"657300461993","appId":"1:657300461993:web:63af54c743610bf6724cb8"};
+window.FIREBASE_CONFIG = {"apiKey":"AIzaSyD0tItcsnkFgh49kaXTGLoDRgNRGwIUQBQ","authDomain":"limit-25964.firebaseapp.com","projectId":"limit-25964","storageBucket":"limit-25964.firebasestorage.app","messagingSenderId":"390300739854","appId":"1:390300739854:web:3b5de692321dee0e594f5f"};
 window.DOWNLOADS = "https://github.com/slinkybat123-code/claude-usage-report/releases/latest/download/";

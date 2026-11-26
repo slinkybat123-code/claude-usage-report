@@ -27,6 +27,7 @@ export async function deleteAccountData(db, fs, uid, email) {
   add(await getDocs(query(collection(db, 'shares'), where('viewer', '==', uid))));
   add(await getDocs(query(collection(db, 'invites'), where('from', '==', uid))));
   if (email) add(await getDocs(query(collection(db, 'invites'), where('toEmail', '==', email))));
+  add(await getDocs(query(collection(db, 'joins'), where('from', '==', uid))));
   refs.push(doc(db, 'cards', uid), doc(db, 'users', uid));
 
   const unique = [...new Map(refs.map((r) => [r.path, r])).values()];

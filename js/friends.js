@@ -1,8 +1,8 @@
 // Friends: invites by Google email, both sides must agree, and either can stop.
 // You see a friend's card (totals and limits) because they shared it with you (shares/{them}_{you}).
 import {
-  requireUser, db, doc, getDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch,
-  serverTimestamp, esc, ago, usd, compact, millis, avatar, emailOf, nameOf, problem,
+  requireUser, db, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, writeBatch,
+  serverTimestamp, deleteField, esc, ago, usd, compact, millis, avatar, emailOf, nameOf, problem, ROOT,
 } from './cloud.js';
 import { sendInvite, watchFriends } from './friends-data.js';
 
@@ -20,6 +20,8 @@ let viewers = []; // shares where you are the owner
 let cards = new Map(); // uid -> card data
 const seen = new Set(); // cards already on screen don't replay their entrance
 let myCard = null;
+let friendsLoaded;
+const friendsReady = new Promise((resolve) => (friendsLoaded = resolve));
 
 // ---------- what a card says ----------
 /** The freshest computer's Claude Code figures on a card, plus the AI accounts. */
@@ -35,6 +37,8 @@ function summary(card) {
     month: c ? (c.spend.month ?? c.spend.projected30Days) : null,
     limits: c ? c.limits || [] : [],
     chats: c ? c.activeChats || 0 : 0,
+    // Only there when they turned on "Also show my 5 most expensive chats".
+    topChats: c && Array.isArray(c.topChats) ? c.topChats.slice(0, 5) : [],
     ais: Object.entries((card && card.ai) || {}).filter(([, a]) => a && a.month != null),
   };
 }
@@ -60,6 +64,7 @@ function friendCard(uid, i) {
     <div class="friend-top">${avatar(name, photo, 'lg')}<div class="who"><b>${esc(name)}</b><span>${esc(status)}</span></div><span class="dot${s.active ? ' on' : ''}" title="${s.active ? 'Active' : 'Not active'}"></span></div>
     <dl><div><dt>Today</dt><dd>${usd(s.today)}</dd></div><div><dt>7 days</dt><dd>${usd(s.week)}</dd></div><div><dt>30 days</dt><dd>${usd(s.month)}</dd></div></dl>
     ${limits ? `<div class="limits">${limits}</div>` : ''}
+    ${s.topChats.length ? `<div class="top-chats"><span class="label">Most expensive chats</span><ol>${s.topChats.map((t) => `<li><span>${esc(t.title || 'Untitled chat')}</span><b>${usd(t.cost)}</b></li>`).join('')}</ol></div>` : ''}
     ${s.ais.length ? `<div class="ais">${s.ais.map(([id, a]) => `<span><i style="background:${AI_COLORS[id] || 'var(--axis)'}"></i>${esc(a.name)} ${usd(a.month)}</span>`).join('')}</div>` : ''}
     <div class="foot"><span>Claude Code at API prices</span><button type="button" data-unfriend="${esc(uid)}">Remove</button></div>
   </article>`;
@@ -82,6 +87,7 @@ function renderInbox() {
 
 function renderOutbox() {
   const open = outbox.filter((o) => o.status !== 'accepted');
+  $('outbox-section').hidden = !open.length;
   $('outbox').innerHTML = open.map((o) => `<li><div class="who"><b>${esc(o.toEmail)}</b><span>${o.status === 'declined' ? 'Declined' : `Invited ${ago(millis(o.createdAt))}, waiting for them to sign in and accept`}</span></div>
     <div class="row-actions"><button type="button" data-cancel="${esc(o.id)}">${o.status === 'declined' ? 'Clear' : 'Cancel'}</button></div></li>`).join('');
 }
@@ -89,7 +95,7 @@ function renderOutbox() {
 function renderFriends() {
   const el = $('friends');
   if (!following.length) {
-    el.innerHTML = '<p class="empty">No friends yet. Invite someone below; once they accept, their card shows up here.</p>';
+    el.innerHTML = '<p class="empty">No friends yet. Tap <b>+ Add a friend</b> and let them scan your code.</p>';
   } else {
     el.innerHTML = following.map((s, i) => friendCard(s.owner, CALM ? 0 : i)).join('');
   }
@@ -135,6 +141,8 @@ watchFriends(me, (f) => {
   following = f.following;
   cards = f.cards;
   myCard = f.myCard;
+  $('share-chats').checked = Boolean(myCard && myCard.shareChats);
+  friendsLoaded();
   renderFriends();
 }, (e) => ($('friends').innerHTML = `<p class="empty">${esc(problem(e))}</p>`));
 
@@ -194,6 +202,136 @@ document.addEventListener('click', async (ev) => {
     }
   } catch (e) {
     t.disabled = false;
+    alert(problem(e));
+  }
+});
+
+// ---------- Add a friend: a QR code (or link) that works once, for a day ----------
+const JOIN_LIFE = 24 * 3600e3;
+let join = null; // { token, url, at }
+
+function newToken() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => abc[b % abc.length]).join('');
+}
+const joinUrl = (token) => new URL(`friends/#join=${token}`, ROOT).href;
+
+function drawQr(url) {
+  const box = $('qr');
+  if (!window.qrcode) {
+    box.innerHTML = '<p class="desc">Couldn\'t draw the code here. Copy the link instead.</p>';
+    return;
+  }
+  const qr = window.qrcode(0, 'M');
+  qr.addData(url, 'Byte');
+  qr.make();
+  const n = qr.getModuleCount();
+  const m = 4;
+  let d = '';
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (qr.isDark(y, x)) d += `M${x + m} ${y + m}h1v1h-1z`;
+  box.innerHTML = `<svg viewBox="0 0 ${n + m * 2} ${n + m * 2}" shape-rendering="crispEdges" role="img" aria-label="QR code that adds you as a friend"><rect width="100%" height="100%" fill="#fff"/><path d="${d}" fill="#000"/></svg>`;
+}
+
+async function makeJoin() {
+  const qrMsg = $('qr-msg');
+  qrMsg.hidden = true;
+  $('copy-link').disabled = true;
+  $('qr').innerHTML = '<p class="desc">Making your code…</p>';
+  const token = newToken();
+  try {
+    await setDoc(doc(db, 'joins', token), { from: me.uid, fromName: me.name, fromPhoto: me.photo, createdAt: serverTimestamp() });
+    join = { token, url: joinUrl(token), at: Date.now() };
+    drawQr(join.url);
+    $('copy-link').disabled = false;
+  } catch (e) {
+    $('qr').innerHTML = '';
+    qrMsg.textContent = problem(e);
+    qrMsg.className = 'msg bad';
+    qrMsg.hidden = false;
+  }
+}
+
+$('add-open').addEventListener('click', () => {
+  $('add-friend').showModal();
+  // One code per opening is plenty; a code older than an hour gets replaced.
+  if (!join || Date.now() - join.at > 3600e3) makeJoin();
+});
+// The phone app's "+ Add" opens this page at #add.
+if (/(?:^#|&)add(?:&|$)/.test(location.hash)) {
+  history.replaceState(null, '', location.pathname);
+  $('add-open').click();
+}
+$('new-qr').addEventListener('click', () => {
+  if (join) deleteDoc(doc(db, 'joins', join.token)).catch(() => {});
+  join = null;
+  makeJoin();
+});
+$('copy-link').addEventListener('click', async () => {
+  if (!join) return;
+  const m = $('qr-msg');
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Add me on Limit', url: join.url });
+    else {
+      await navigator.clipboard.writeText(join.url);
+      m.textContent = 'Link copied. Send it to one friend.';
+      m.className = 'msg ok';
+      m.hidden = false;
+    }
+  } catch { /* share sheet closed */ }
+});
+$('add-friend').addEventListener('click', (ev) => {
+  if (ev.target === $('add-friend') || ev.target.closest('[data-close]')) $('add-friend').close();
+});
+
+// ---------- opening someone's QR code or link: friends straight away ----------
+async function useJoin(token) {
+  history.replaceState(null, '', location.pathname);
+  const box = $('joined');
+  const show = (html) => {
+    box.innerHTML = html;
+    box.hidden = false;
+    box.scrollIntoView({ block: 'nearest' });
+  };
+  let j;
+  try {
+    const d = await getDoc(doc(db, 'joins', token));
+    j = d.exists() ? d.data() : null;
+  } catch {
+    j = null;
+  }
+  if (!j || Date.now() - millis(j.createdAt) > JOIN_LIFE) return show('<p><b>That invite has expired or was already used.</b> Ask your friend to show you a new code: Friends, + Add a friend.</p>');
+  if (j.from === me.uid) return show('<p><b>That\'s your own invite.</b> Show the code to a friend and have them scan it with their phone.</p>');
+  const name = j.fromName || 'your friend';
+  await Promise.race([friendsReady, new Promise((r) => setTimeout(r, 5000))]);
+  if (following.some((s) => s.owner === j.from)) {
+    await deleteDoc(doc(db, 'joins', token)).catch(() => {});
+    return show(`<p><b>You and ${esc(name)} are already friends.</b></p>`);
+  }
+  try {
+    const b = writeBatch(db);
+    b.set(doc(db, 'shares', `${me.uid}_${j.from}`), { owner: me.uid, viewer: j.from, ownerName: me.name, ownerPhoto: me.photo, viewerName: name, viewerPhoto: j.fromPhoto || null, createdAt: serverTimestamp() });
+    b.set(doc(db, 'shares', `${j.from}_${me.uid}`), { owner: j.from, viewer: me.uid, ownerName: name, ownerPhoto: j.fromPhoto || null, viewerName: me.name, viewerPhoto: me.photo, join: token, createdAt: serverTimestamp() });
+    b.delete(doc(db, 'joins', token));
+    await b.commit();
+    show(`<p>${avatar(name, j.fromPhoto)} <b>You and ${esc(name)} are now friends.</b> You both see each other's totals and limits.</p>`);
+  } catch (e) {
+    show(`<p><b>Couldn't add ${esc(name)}.</b> ${esc(e.code === 'permission-denied' ? 'The invite has expired or was already used. Ask for a new code.' : problem(e))}</p>`);
+  }
+}
+const joinToken = () => (/(?:^#|&)join=([A-Za-z0-9]{24,48})/.exec(location.hash) || [])[1];
+if (joinToken()) useJoin(joinToken());
+window.addEventListener('hashchange', () => joinToken() && useJoin(joinToken()));
+
+// ---------- your top chats: your choice ----------
+$('share-chats').addEventListener('change', async (ev) => {
+  const on = ev.target.checked;
+  try {
+    const changes = { shareChats: on };
+    // Off: take the chats off your card now, not at your computer's next upload.
+    if (!on) for (const id of Object.keys((myCard && myCard.pcs) || {})) changes[`pcs.${id}.claude.topChats`] = deleteField();
+    await updateDoc(doc(db, 'cards', me.uid), changes);
+  } catch (e) {
+    ev.target.checked = !on;
     alert(problem(e));
   }
 });

@@ -109,10 +109,44 @@ function renderNav(user, current) {
   nav.innerHTML = `<div class="in">
     <a class="brand" href="${page('dashboard/')}"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>Limit</a>
     <div class="links">${LINKS.map(([id, href, label]) => `<a href="${page(href)}"${id === current ? ' aria-current="page"' : ''} data-nav="${id}">${label}</a>`).join('')}</div>
-    <div class="me">${avatar(nameOf(user), user.photoURL)}<span class="who">${esc(nameOf(user))}</span><button type="button" id="sign-out">Sign out</button></div>
+    <div class="me"><button type="button" id="nav-theme" aria-label="Switch color theme"></button>${avatar(nameOf(user), user.photoURL)}<span class="who">${esc(nameOf(user))}</span><button type="button" id="sign-out">Sign out</button></div>
   </div>`;
   nav.querySelector('#sign-out').addEventListener('click', signOut);
+  const btn = nav.querySelector('#nav-theme');
+  const show = () => (btn.textContent = `Theme: ${savedTheme()}`);
+  btn.addEventListener('click', () => {
+    setTheme(THEMES[(THEMES.indexOf(savedTheme()) + 1) % THEMES.length]);
+    show();
+  });
+  show();
 }
+
+// ---------- theme: one choice for every page (each page applies it before drawing, see site-template.js) ----------
+const THEMES = ['system', 'light', 'dark'];
+export function savedTheme() {
+  try {
+    const t = localStorage.getItem('theme');
+    return THEMES.includes(t) ? t : 'system';
+  } catch {
+    return 'system';
+  }
+}
+export function setTheme(t) {
+  try {
+    localStorage.setItem('theme', t);
+  } catch { /* private window: this page only */ }
+  if (t === 'system') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+  const old = document.getElementById('theme'); // the dashboard's own button
+  if (old) old.textContent = `Theme: ${t}`;
+}
+// Another tab changed it: follow.
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'theme') return;
+  setTheme(savedTheme());
+  const btn = document.getElementById('nav-theme');
+  if (btn) btn.textContent = `Theme: ${savedTheme()}`;
+});
 
 /** A badge on Friends when someone has invited you. */
 function watchInvites(user) {

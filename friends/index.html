@@ -2,6 +2,7 @@
 <html lang="en" data-hosted>
 <head>
   <meta charset="utf-8">
+  <script data-limit-theme>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Friends · Limit</title>
   <meta name="robots" content="noindex, nofollow">
@@ -21,9 +22,12 @@
     <div class="page-head">
       <div>
         <h1>Friends</h1>
-        <p>See each other's usage. Only people who accept your invite, and only totals and limits, never chat titles or folders.</p>
+        <p>See each other's usage. Only people you add, and only totals and limits, unless someone chooses to share their top chats too.</p>
       </div>
+      <button class="primary add-friend-btn" type="button" id="add-open" aria-haspopup="dialog">+ Add a friend</button>
     </div>
+
+    <section id="joined" class="card joined" role="status" hidden></section>
 
     <section id="inbox" hidden>
       <h2 class="block">Invites for you</h2>
@@ -38,22 +42,37 @@
     <h2 class="block">Your friends</h2>
     <div class="friend-grid" id="friends"><p class="empty">Loading…</p></div>
 
-    <h2 class="block">Add a friend</h2>
+    <section id="outbox-section" hidden>
+      <h2 class="block">Invites you sent</h2>
+      <div class="card"><ul class="people" id="outbox"></ul></div>
+    </section>
+
+    <h2 class="block">Who can see yours</h2>
     <div class="card">
+      <ul class="people" id="viewers"></ul>
+      <label class="switch-row"><input type="checkbox" id="share-chats"><span><b>Also show my 5 most expensive chats</b><br><span class="desc">Friends see each chat's title and what it cost. Off by default; turn it off any time and they disappear.</span></span></label>
+    </div>
+
+    <dialog class="af-dialog add-dialog" id="add-friend" aria-labelledby="add-title">
+      <div class="add-head"><h2 id="add-title">Add a friend</h2><button type="button" class="icon-btn" data-close aria-label="Close">×</button></div>
+      <div class="qr-block">
+        <div class="qr" id="qr" aria-label="QR code invite"><p class="desc">Making your code…</p></div>
+        <div>
+          <p><b>Scan with their phone's camera.</b> They sign in with Google and you're friends straight away.</p>
+          <p class="desc">Or send them the link. It works once and stops after 24 hours.</p>
+          <div class="row-actions"><button type="button" id="copy-link" disabled>Copy link</button><button type="button" id="new-qr">New code</button></div>
+          <p class="msg" id="qr-msg" role="status" hidden></p>
+        </div>
+      </div>
       <form id="invite" class="form-row" autocomplete="off">
-        <label for="invite-email" class="sr-only">Their Google email address</label>
-        <input id="invite-email" name="email" type="email" required placeholder="Their Google email address" spellcheck="false">
+        <label for="invite-email">Or invite by their Google email</label>
+        <input id="invite-email" name="email" type="email" required placeholder="friend@gmail.com" spellcheck="false">
         <button class="primary" type="submit">Send invite</button>
       </form>
       <p class="msg" id="invite-msg" role="status" hidden></p>
-      <p class="desc" style="margin:12px 0 0">They see your invite when they sign in here with that Google account. Accepting shares both ways, and either of you can stop at any time.</p>
-      <ul class="people" id="outbox" style="margin-top:8px"></ul>
-    </div>
-
-    <h2 class="block">Who can see yours</h2>
-    <div class="card"><ul class="people" id="viewers"></ul></div>
+    </dialog>
   </main>
-  <script src="../prompt-coach.js"></script>
+  <script src="../qrcode.js"></script>  <script src="../prompt-coach.js"></script>
   <script src="../insights.js"></script>
   <script src="../sheet.js"></script>
   <script type="module" src="../js/friends.js"></script>

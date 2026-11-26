@@ -2,6 +2,7 @@
 <html lang="en" data-hosted>
 <head>
   <meta charset="utf-8">
+  <script data-limit-theme>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Computers · Limit</title>
   <meta name="robots" content="noindex, nofollow">
@@ -27,7 +28,7 @@
 
     <section class="card approve" id="approve" hidden aria-live="polite"></section>
 
-    <h2 class="block">Linked to your account</h2>
+    <h2 class="block">Your computers and phones</h2>
     <div class="card"><ul class="people" id="devices"><li><p class="empty">Loading…</p></li></ul></div>
 
     <h2 class="block">Add a computer</h2>
@@ -38,12 +39,12 @@
     <div class="card" style="margin-top:14px">
       <ol class="steps">
         <li>Install it on the computer where you use Claude Code.</li>
-        <li>When it finishes, your browser opens this page with a link request. Check the computer's name and click <b>Link</b>.</li>
+        <li>When it finishes, your browser opens this page and asks <b>Is this your computer?</b> Click <b>Yes, it's mine</b>.</li>
         <li>That's it. It starts with Windows (or your Mac) and sends new figures within a minute or two of each Claude Code reply.</li>
       </ol>
       <form id="code-form" class="form-row" style="margin-top:16px" autocomplete="off">
-        <label for="code" class="sr-only">Link code from your computer</label>
-        <input id="code" name="code" type="text" placeholder="Or type the link code from your computer" spellcheck="false" autocapitalize="characters" maxlength="14">
+        <label for="code" class="sr-only">Code shown by Limit on your computer or phone</label>
+        <input id="code" name="code" type="text" placeholder="Or type the code Limit shows on your computer or phone" spellcheck="false" autocapitalize="characters" maxlength="14">
         <button type="submit">Find it</button>
       </form>
     </div>
