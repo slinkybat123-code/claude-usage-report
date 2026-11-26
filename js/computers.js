@@ -9,6 +9,7 @@ const user = await requireUser('computers');
 fillDownloads();
 const $ = (id) => document.getElementById(id);
 const PC_ICON = '<span class="pc-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></span>';
+const PHONE_ICON = '<span class="pc-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg></span>';
 
 let devices = [];
 let uploads = {}; // device id -> last upload time
@@ -38,10 +39,13 @@ async function showRequest(code) {
     link = null;
   }
   if (!link) return approveBox(`<h2>Link code ${esc(pretty(code))} has expired or was already used</h2><p class="desc">Codes last 20 minutes. On your computer, open <b>Limit</b> from the Start menu (or Applications on a Mac) to get a new one.</p>`);
-  if (link.owner === user.uid) return approveBox(`<h2>${esc(link.name)} is linked</h2><p class="desc">It sends its figures within a minute or two.</p>`);
-  if (link.owner) return approveBox(`<h2>That computer is already linked to another account</h2><p class="desc">If it's yours, unlink it there first, or reinstall to get a new code.</p>`);
-  approveBox(`<h2>Link ${esc(link.name || 'this computer')} to your account?</h2>
-    <p class="desc">${esc(link.platform || 'A computer')} · code <span class="code">${esc(pretty(code))}</span>. It will send its Claude Code figures to ${esc(user.email)}. Only link a computer you just installed Limit on.</p>
+  const phone = link.kind === 'phone';
+  if (link.owner === user.uid) return approveBox(`<h2>${esc(link.name)} is linked</h2><p class="desc">${phone ? 'The Limit app on it shows your figures in a few seconds.' : 'It sends its figures within a minute or two.'}</p>`);
+  if (link.owner) return approveBox(`<h2>That ${phone ? 'phone' : 'computer'} is already linked to another account</h2><p class="desc">If it's yours, unlink it there first, or ${phone ? 'unlink it in the app\'s Settings' : 'reinstall'} to get a new code.</p>`);
+  approveBox(`<h2>Link ${esc(link.name || (phone ? 'this phone' : 'this computer'))} to your account?</h2>
+    <p class="desc">${esc(link.platform || (phone ? 'A phone' : 'A computer'))} · code <span class="code">${esc(pretty(code))}</span>. ${phone
+    ? `The Limit app on it will show the figures your computers send to ${esc(user.email)}, and the friends who share with you. It can only read them, never change them. Only link a phone you just opened Limit on.`
+    : `It will send its Claude Code figures to ${esc(user.email)}. Only link a computer you just installed Limit on.`}</p>
     <div class="row-actions" style="margin-top:14px"><button class="primary" type="button" id="do-link">Link</button><button type="button" id="not-mine">It's not mine</button></div>
     <p class="msg bad" id="link-err" hidden></p>`);
   $('do-link').addEventListener('click', async () => {
@@ -52,7 +56,9 @@ async function showRequest(code) {
       b.set(doc(db, 'devices', link.device), { owner: user.uid, kind: link.kind || 'pc', name: link.name || 'Computer', platform: link.platform || '', link: code, linkedAt: serverTimestamp() });
       await b.commit();
       history.replaceState(null, '', location.pathname);
-      approveBox(`<h2>Linked ${esc(link.name || 'your computer')}</h2><p class="desc">Its first figures arrive in a minute or two. Open <a href="../dashboard/">Claude Code</a> to watch them come in.</p>`);
+      approveBox(phone
+        ? `<h2>Linked ${esc(link.name || 'your phone')}</h2><p class="desc">Go back to the Limit app: it moves on by itself in a few seconds.</p>`
+        : `<h2>Linked ${esc(link.name || 'your computer')}</h2><p class="desc">Its first figures arrive in a minute or two. Open <a href="../dashboard/">Claude Code</a> to watch them come in.</p>`);
     } catch (e) {
       $('do-link').disabled = false;
       const err = $('link-err');
@@ -79,8 +85,9 @@ function render() {
   $('devices').innerHTML = devices.length
     ? devices.map((d) => {
       const at = uploads[d.id];
-      const state = at ? (Date.now() - at < 6 * 60e3 ? 'Sending now' : `Last sent ${ago(at)}`) : 'Linked, no figures yet';
-      return `<li>${PC_ICON}<div class="who"><b>${esc(d.name)}</b><span>${esc(d.platform || '')}${d.platform ? ' · ' : ''}${state} · linked ${ago(millis(d.linkedAt))}</span></div>
+      const phone = d.kind === 'phone';
+      const state = phone ? 'Phone app, reads your figures' : at ? (Date.now() - at < 6 * 60e3 ? 'Sending now' : `Last sent ${ago(at)}`) : 'Linked, no figures yet';
+      return `<li>${phone ? PHONE_ICON : PC_ICON}<div class="who"><b>${esc(d.name)}</b><span>${esc(d.platform || '')}${d.platform ? ' · ' : ''}${state} · linked ${ago(millis(d.linkedAt))}</span></div>
         <div class="row-actions"><button type="button" data-unlink="${esc(d.id)}">Unlink</button></div></li>`;
     }).join('')
     : '<li><p class="empty">None yet. Install Limit on the computer where you use Claude Code (below).</p></li>';
@@ -99,7 +106,10 @@ $('devices').addEventListener('click', async (ev) => {
   const b = ev.target.closest('[data-unlink]');
   if (!b) return;
   const d = devices.find((x) => x.id === b.dataset.unlink);
-  if (!confirm(`Unlink ${d ? d.name : 'this computer'}? It stops sending, and its figures are removed from your account. To link it again, reinstall Limit on it.`)) return;
+  const phone = d && d.kind === 'phone';
+  if (!confirm(phone
+    ? `Unlink ${d.name}? The Limit app on it stops showing your figures and friends. To link it again, open the app.`
+    : `Unlink ${d ? d.name : 'this computer'}? It stops sending, and its figures are removed from your account. To link it again, reinstall Limit on it.`)) return;
   b.disabled = true;
   try {
     await deleteDoc(doc(db, 'devices', b.dataset.unlink));
