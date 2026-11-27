@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <script data-limit-theme>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+  <script data-limit-theme>try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);if(navigator.userAgent.indexOf("LimitApp/3")>=0)document.documentElement.classList.add("shell","phone")}catch(e){}</script>
   <script src="../splash.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Limit for Android</title>

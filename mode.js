@@ -3,6 +3,7 @@
    ?app=2          the same inside the app's bottom tabs (1.6 and later): the app has its own
                    tabs for All your AIs and Friends, and its own Settings (theme, diagnostic
                    report), so the page hides those buttons and uses the app's fonts (html.shell).
+                   ?app=3          Limit app 3: the calm phone layout (html.shell.phone), on every page the app opens.
                    &theme=light|dark sets the theme the app chose before anything is drawn.
    #cloud=<url>    the offline dashboard: the last copy your PC saved to your gist, for when the PC
                    is off or asleep (html[data-offline]). Only gist addresses are accepted. */
@@ -11,6 +12,14 @@
   try {
     var q = new URLSearchParams(location.search);
     var app = q.get('app');
+    // Limit app 3 and later: every page it opens, wherever you go from there (its browser says LimitApp/3).
+    if (app === '3' || navigator.userAgent.indexOf('LimitApp/3') >= 0) {
+      var r3 = document.documentElement;
+      r3.classList.add('shell', 'phone');
+      var t3 = q.get('theme');
+      if (t3 === 'light' || t3 === 'dark') r3.setAttribute('data-theme', t3);
+      app = null;
+    }
     if (app === '1' || app === '2') {
       var root = document.documentElement;
       root.classList.add('app');

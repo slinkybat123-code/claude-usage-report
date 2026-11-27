@@ -719,5 +719,58 @@
     return fn && snap ? fn(snap, ref.id) : null;
   }
 
-  return { detail, highlights, aiDetail, friendDetail, friendStrip, friendsFromCodes, cardFromSnapshot, soFarText, prettyModel, promptItems, tipsFor };
+  // ---------- the big chart: spend over a period you pick ----------
+  // series.history (desktop 3.0 and later) is every day since the first reply: [[t, cost, replies], ...].
+  const RANGES = [
+    { key: 'day', short: '1D', label: 'Last 24 hours', prevLabel: 'the 24 hours before' },
+    { key: 'week', short: '1W', label: 'Last 7 days', prevLabel: 'the 7 days before', days: 7 },
+    { key: 'month', short: '1M', label: 'Last 30 days', prevLabel: 'the 30 days before', days: 30 },
+    { key: 'quarter', short: '3M', label: 'Last 3 months', prevLabel: 'the 3 months before', days: 91, needs: 31 },
+    { key: 'year', short: '1Y', label: 'Last 12 months', prevLabel: 'the year before', days: 365, needs: 92 },
+    { key: 'all', short: 'All', label: 'All time', prevLabel: '', needs: 1 },
+  ];
+  const historyOf = (snap) => {
+    const h = snap.series && snap.series.history;
+    return Array.isArray(h) && h.length ? h.map((d) => ({ t: d[0], cost: d[1] || 0, requests: d[2] || 0 })) : null;
+  };
+  const sumCost = (rows) => rows.reduce((s, r) => s + (r.cost || 0), 0);
+
+  /** The ranges this snapshot can show: day, week and month always; longer ones need series.history. */
+  function ranges(snap) {
+    const h = historyOf(snap);
+    return RANGES.filter((r) => !r.needs || (h && h.length >= r.needs)).map(({ key, short, label }) => ({ key, short, label }));
+  }
+
+  /** Spend in one range: per-bucket values, a running total for the line, and the period before for comparison. */
+  function range(snap, key) {
+    const def = RANGES.find((r) => r.key === key);
+    if (!def || !ranges(snap).some((r) => r.key === key)) return null;
+    const s = snap.series || {};
+    const h = historyOf(snap);
+    let rows;
+    let before = null;
+    if (key === 'day') {
+      const hourly = s.hourly || [];
+      rows = hourly.slice(-24);
+      if (hourly.length >= 48) before = hourly.slice(-48, -24);
+    } else if (key === 'all') {
+      rows = h;
+    } else {
+      const source = h && h.length >= def.days ? h : key === 'week' || key === 'month' ? (h && h.length > (s.daily || []).length ? h : s.daily || []) : h;
+      rows = source.slice(-def.days);
+      if (source.length >= def.days * 2) before = source.slice(-def.days * 2, -def.days);
+    }
+    let run = 0;
+    const points = rows.map((r) => ({ t: r.t, value: r.cost || 0, total: (run += r.cost || 0) }));
+    const total = run;
+    const prev = before ? sumCost(before) : null;
+    let run2 = 0;
+    const prevPoints = before ? before.map((r) => ({ t: r.t, value: r.cost || 0, total: (run2 += r.cost || 0) })) : null;
+    return {
+      key, short: def.short, label: def.label, prevLabel: def.prevLabel, unit: key === 'day' ? 'hour' : 'day',
+      points, prevPoints, total, prev, change: prev ? (total - prev) / prev : prev === 0 && total === 0 ? 0 : null,
+    };
+  }
+
+  return { detail, highlights, range, ranges, aiDetail, friendDetail, friendStrip, friendsFromCodes, cardFromSnapshot, soFarText, prettyModel, promptItems, tipsFor };
 });

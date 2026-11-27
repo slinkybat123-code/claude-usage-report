@@ -13,6 +13,9 @@
   const REMOTE = document.body.dataset.mode === 'remote' || Boolean(OFFLINE) || HOSTED;
   let feedMeta = null; // website: { name, updatedAt } of the computer the figures came from
   const CALM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Limit app 3: the calm layout. The big chart, plan limits and a few figures; the rest behind Show all details.
+  const PHONE = document.documentElement.classList.contains('phone');
+  if (PHONE) document.body.classList.add('folded');
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
@@ -24,6 +27,8 @@
   let booted = false;
   let metric = ['cost', 'tokens', 'nocache'].includes(store.get('metric')) ? store.get('metric') : 'cost';
   let workRange = store.get('workRange') === 'week' ? 'week' : 'all';
+  let heroRange = store.get('heroRange') || 'month'; // the big chart's period: day week month quarter year all
+  let hero = null; // what the big chart is showing: Insights.range() plus where each point sits
   const openTables = new Set(); // data tables the viewer opened survive re-renders
   document.addEventListener('toggle', (ev) => {
     const id = ev.target.getAttribute && ev.target.getAttribute('data-table');
@@ -224,12 +229,8 @@
   function renderSpend() {
     const S = snap.spend;
     const all = win('all').totals;
-    const days = snap.series.daily;
-    const values = days.map((d) => d.cost);
-    const max = Math.max(1e-9, ...values);
-    const last = values[values.length - 1];
     const mix = ALL_KEYS.map((k) => ({ k, s: C.SERIES.find((x) => x.key === k), v: S.byType[k] }));
-    $('spend').innerHTML = `<div class="spend-head"${opens('window:all')}>
+    $('spend').innerHTML = `${heroHtml()}<div class="spend-head"${opens('window:all')}>
         <div class="eyebrow">All chats combined · API value <span class="chev" aria-hidden="true">›</span></div>
         <div class="spend-total">${num('spend.all', S.allTime, 'hero')}</div>
         <div class="stat-sub"><b>${num('spend.req', all.requests, 'int')}</b> replies across <b>${snap.sessions.length}</b> chats · <b>${num('spend.per', S.perRequest, 'usd2')}</b> per reply</div>
@@ -242,17 +243,175 @@
         <div${opens('projection')}><dt>Next 30 days at this pace</dt><dd>${num('spend.proj', S.projected30Days)}<small>${usd(S.dailyAverage)} a day, 7-day average</small></dd></div>
       </dl>
       ${highlightsHtml()}
-      <div class="spend-trend" data-spark>
-        <div class="cap"><span>Cost per day, last 30 days · click a day for its breakdown</span><span>${S.topDay ? `Peak ${usd(S.topDay.cost)} on ${shortDate(S.topDay.t)}` : ''}</span></div>
-        <div class="spark-box">${C.sparkArea(values, { title: 'Cost per day, last 30 days' })}
-        <span class="spark-cursor" hidden></span><span class="spark-hover" hidden></span>
-        <span class="spark-dot" style="left:${(954 / 960) * 100}%;top:${((90 - (last / max) * 80) / 96) * 100}%"></span></div>
-      </div>
       <div class="spend-mix">
         <div class="mix" role="img" aria-label="Spend by token type">${mix.filter((m) => m.v > 0).map((m) => fill(`mix.${m.k}`, m.v, 'flexGrow', `background:${m.s.color}`)).join('')}</div>
         <div class="mix-legend">${mix.map((m) => `<span><i style="background:${m.s.color}"></i>${esc(m.s.label)} <b>${usd(m.v)}</b> · ${pct(m.v, S.allTime)}%</span>`).join('')}</div>
       </div>`;
   }
+
+  // ---------- the big chart: what you spent over 1D 1W 1M 3M 1Y or All, against the period before ----------
+  const HW = 1000;
+  const HH = 300;
+  /** A smooth line through the points that never overshoots (monotone cubic), so a flat stretch stays flat. */
+  function smoothPath(pts) {
+    const n = pts.length;
+    if (!n) return '';
+    if (n === 1) return `M${pts[0][0] - 1},${pts[0][1]}L${pts[0][0] + 1},${pts[0][1]}`;
+    const d = [];
+    for (let i = 0; i < n - 1; i++) d.push((pts[i + 1][1] - pts[i][1]) / (pts[i + 1][0] - pts[i][0] || 1));
+    const m = [d[0]];
+    for (let i = 1; i < n - 1; i++) m.push(d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2);
+    m.push(d[n - 2]);
+    for (let i = 0; i < n - 1; i++) {
+      if (d[i] === 0) { m[i] = 0; m[i + 1] = 0; continue; }
+      const a = m[i] / d[i];
+      const b = m[i + 1] / d[i];
+      const q = a * a + b * b;
+      if (q > 9) { const t = 3 / Math.sqrt(q); m[i] = t * a * d[i]; m[i + 1] = t * b * d[i]; }
+    }
+    const f = (v) => v.toFixed(1);
+    let path = `M${f(pts[0][0])},${f(pts[0][1])}`;
+    for (let i = 0; i < n - 1; i++) {
+      const dx = (pts[i + 1][0] - pts[i][0]) / 3;
+      path += `C${f(pts[i][0] + dx)},${f(pts[i][1] + m[i] * dx)} ${f(pts[i + 1][0] - dx)},${f(pts[i + 1][1] - m[i + 1] * dx)} ${f(pts[i + 1][0])},${f(pts[i + 1][1])}`;
+    }
+    return path;
+  }
+  const heroWhen = (t, unit) => (unit === 'hour'
+    ? new Date(t).toLocaleString([], { weekday: 'short', hour: 'numeric' })
+    : new Date(t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: heroRange === 'year' || heroRange === 'all' ? 'numeric' : undefined }));
+  function heroDelta(r) {
+    if (r.change == null || !r.prev) {
+      const avg = r.points.length ? r.total / r.points.length : 0;
+      const since = r.key === 'all' && r.points.length ? `since ${new Date(r.points[0].t).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}` : '';
+      return `<span class="hd-chip">${usd(avg)} a ${r.unit}</span><span class="hd-quiet">on average${since ? ` · ${esc(since)}` : ''}</span>`;
+    }
+    const diff = r.total - r.prev;
+    const cls = diff > 0.005 ? 'more' : diff < -0.005 ? 'less' : '';
+    const arrow = diff > 0.005 ? '▲' : diff < -0.005 ? '▼' : '=';
+    return `<span class="hd-chip ${cls}">${arrow} ${usd(Math.abs(diff))} (${Math.round(Math.abs(r.change) * 100)}%)</span><span class="hd-quiet">vs ${esc(r.prevLabel)}</span>`;
+  }
+  function heroHtml() {
+    const I = window.Insights;
+    if (!I || !I.range) return '';
+    const list = I.ranges(snap);
+    if (!list.some((x) => x.key === heroRange)) heroRange = 'month';
+    const r = I.range(snap, heroRange);
+    if (!r || !r.points.length) return '';
+    const n = r.points.length;
+    const before = r.prev != null && r.prevPoints && r.prevPoints.length ? r.prevPoints : null;
+    const top = Math.max(1e-9, r.total, before ? r.prev : 0) * 1.08;
+    const x = (i, count) => (count === 1 ? HW / 2 : 2 + (i / (count - 1)) * (HW - 26)); // room for the end dot
+    const y = (v) => HH - 6 - (v / top) * (HH - 22);
+    const pts = r.points.map((p, i) => [x(i, n), y(p.total)]);
+    hero = { r, pts };
+    const line = smoothPath(pts);
+    const area = `${line}L${HW},${HH}L0,${HH}Z`;
+    const ghost = before ? smoothPath(before.map((p, i) => [x(i, before.length), y(p.total)])) : '';
+    const end = pts[n - 1];
+    const pctX = (v) => (v / HW) * 100;
+    const pctY = (v) => (v / HH) * 100;
+    return `<div class="trend" data-hero>
+        <div class="hero-head">
+          <div class="eyebrow" id="hero-when">Spent · ${esc(r.label)}</div>
+          <div class="hero-total" id="hero-total">${num('hero.total', r.total, 'hero')}</div>
+          <div class="hero-delta" id="hero-delta">${heroDelta(r)}</div>
+        </div>
+        <div class="hero-plot" data-hero-plot role="img" aria-label="${esc(`Spend, ${r.label}: ${usd(r.total)}`)}">
+          <svg class="hero-svg" viewBox="0 0 ${HW} ${HH}" preserveAspectRatio="none" aria-hidden="true">
+            <defs><linearGradient id="hero-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--series-1);stop-opacity:.22"/><stop offset="1" style="stop-color:var(--series-1);stop-opacity:0"/></linearGradient></defs>
+            ${ghost ? `<path class="hero-ghost" d="${ghost}"/>` : ''}
+            <path class="hero-area" d="${area}" fill="url(#hero-fill)"/>
+            <path class="hero-line" d="${line}"/>
+          </svg>
+          <span class="hero-dot" style="left:${pctX(end[0])}%;top:${pctY(end[1])}%"></span>
+          <span class="hero-cursor" hidden></span><span class="hero-knob" hidden></span>
+        </div>
+        <div class="hero-axis"><span>${esc(heroWhen(r.points[0].t, r.unit))}</span>${before ? '<span class="hero-key"><i></i>the period before</span>' : ''}<span>Now</span></div>
+        <div class="hero-ranges" role="tablist" aria-label="Period">${list.map((x) => `<button type="button" role="tab" data-range="${x.key}" aria-selected="${x.key === heroRange}" title="${esc(x.label)}">${esc(x.short)}</button>`).join('')}</div>
+        <dl class="hero-foot">
+          <div${opens('window:today')}><dt>Today</dt><dd>${num('hf.today', snap.spend.today)}</dd></div>
+          <div${opens('window:all')}><dt>All time</dt><dd>${num('hf.all', snap.spend.allTime)}</dd></div>
+          <div${opens('projection')}><dt>Next 30 days</dt><dd>${num('hf.proj', snap.spend.projected30Days)}</dd></div>
+        </dl>
+      </div>`;
+  }
+  /** Re-draws just the big chart for another period; the total counts from the old figure to the new one. */
+  function setHeroRange(key) {
+    heroRange = key;
+    store.set('heroRange', key);
+    const old = document.querySelector('[data-hero]');
+    if (!old) return;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = heroHtml();
+    const next = wrap.firstElementChild;
+    if (!next) return;
+    if (!CALM) next.classList.add('re');
+    old.replaceWith(next);
+    animate();
+    setTimeout(() => next.classList.remove('re'), 1200);
+  }
+  /** A finger or pointer on the chart: the big figure shows that moment instead, like a stock chart. */
+  function heroScrub(ev) {
+    const plot = ev.target.closest && ev.target.closest('[data-hero-plot]');
+    if (!plot || !hero) return null;
+    const box = plot.getBoundingClientRect();
+    const n = hero.r.points.length;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((ev.clientX - box.left) / box.width) * (n - 1))));
+    const p = hero.r.points[i];
+    const [px, py] = hero.pts[i];
+    const cur = plot.querySelector('.hero-cursor');
+    const knob = plot.querySelector('.hero-knob');
+    cur.hidden = knob.hidden = false;
+    cur.style.left = knob.style.left = `${(px / HW) * 100}%`;
+    knob.style.top = `${(py / HH) * 100}%`;
+    plot.closest('[data-hero]').classList.add('scrubbing');
+    cancelAnimationFrame(tweens.get('hero.total'));
+    $('hero-total').innerHTML = FMT.hero(p.total);
+    $('hero-when').textContent = heroWhen(p.t, hero.r.unit);
+    $('hero-delta').innerHTML = `<span class="hd-quiet">${usd(p.value)} spent that ${hero.r.unit}</span>`;
+    return p;
+  }
+  function heroRest() {
+    const h = document.querySelector('[data-hero]');
+    if (!h || !hero || !h.classList.contains('scrubbing')) return;
+    h.classList.remove('scrubbing');
+    h.querySelectorAll('.hero-cursor, .hero-knob').forEach((el) => (el.hidden = true));
+    shown.set('hero.total', hero.r.total);
+    $('hero-total').innerHTML = FMT.hero(hero.r.total);
+    $('hero-when').textContent = `Spent · ${hero.r.label}`;
+    $('hero-delta').innerHTML = heroDelta(hero.r);
+  }
+  let scrubDown = null;
+  document.addEventListener('pointerdown', (ev) => {
+    if (!snap || !ev.target.closest || !ev.target.closest('[data-hero-plot]')) return;
+    scrubDown = { x: ev.clientX, y: ev.clientY, p: heroScrub(ev) };
+  });
+  document.addEventListener('pointermove', (ev) => {
+    if (!snap || !ev.target.closest) return;
+    if (ev.pointerType === 'mouse' || scrubDown) {
+      if (!heroScrub(ev) && ev.pointerType === 'mouse') heroRest();
+    }
+  }, { passive: true });
+  const scrubEnd = (ev) => {
+    if (!scrubDown) return;
+    const tap = ev.type === 'pointerup' && Math.abs(ev.clientX - scrubDown.x) < 8 && Math.abs(ev.clientY - scrubDown.y) < 8;
+    const p = scrubDown.p;
+    scrubDown = null;
+    if (ev.pointerType !== 'mouse') setTimeout(heroRest, tap ? 1200 : 300);
+    if (tap && p && hero && hero.r.unit === 'day' && window.Sheet && snap.series.daily.some((d) => d.t === p.t && d.requests > 0)) window.Sheet.open(`day:${p.t}`);
+  };
+  document.addEventListener('pointerup', scrubEnd);
+  document.addEventListener('pointercancel', scrubEnd);
+  document.addEventListener('mouseout', (ev) => {
+    const from = ev.target.closest && ev.target.closest('[data-hero-plot]');
+    const to = ev.relatedTarget && ev.relatedTarget.closest && ev.relatedTarget.closest('[data-hero-plot]');
+    if (from && !to) heroRest();
+  });
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest && ev.target.closest('[data-range]');
+    if (b && snap) setHeroRange(b.getAttribute('data-range'));
+  });
 
   /** A row of quick figures: this week against the last, streak, busiest weekday and hour, yesterday. */
   function highlightsHtml() {
@@ -696,6 +855,9 @@
     renderBreakdown();
     renderFooter();
     renderRemote();
+    if (PHONE && !document.querySelector('.fold-more') && $('limits')) {
+      $('limits').insertAdjacentHTML('afterend', '<div class="fold-more"><button type="button" data-action="fold" aria-expanded="false"><span>Show all details</span><span class="caret" aria-hidden="true"></span></button></div>');
+    }
     if (window.Sheet) window.Sheet.refresh();
     const signout = document.querySelector('[data-action="signout"]');
     if (signout) signout.hidden = !(snap.remote && snap.remote.signIn);
@@ -744,6 +906,19 @@
     const btn = ev.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.getAttribute('data-action');
+    if (action === 'fold') {
+      const open = document.body.classList.toggle('folded') === false;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.firstElementChild.textContent = open ? 'Show less' : 'Show all details';
+      if (open && !CALM) {
+        document.body.classList.add('unfolding');
+        renderCharts(true);
+        animate();
+        setTimeout(() => document.body.classList.remove('unfolding'), 900);
+      }
+      if (!open) $('spend').scrollIntoView({ block: 'start', behavior: CALM ? 'auto' : 'smooth' });
+      return;
+    }
     if (action === 'chats-toggle') {
       showAllChats = !showAllChats;
       renderSessions();
@@ -797,41 +972,8 @@
     tip.style.left = `${x / z}px`;
     tip.style.top = `${y / z}px`;
   }
-  /** Which day of the trend line the pointer is over. */
-  function sparkDay(spark, ev) {
-    const box = spark.querySelector('svg').getBoundingClientRect();
-    const days = snap.series.daily;
-    const i = Math.max(0, Math.min(days.length - 1, Math.round((((ev.clientX - box.left) / box.width) * 960 - 6) / 948 * (days.length - 1))));
-    return { i, d: days[i], days };
-  }
-  function sparkCursor(spark, i, days) {
-    const cur = spark.querySelector('.spark-cursor');
-    const dot = spark.querySelector('.spark-hover');
-    if (!cur || !dot) return;
-    const max = Math.max(1e-9, ...days.map((x) => x.cost));
-    const left = `${((6 + (i / Math.max(1, days.length - 1)) * 948) / 960) * 100}%`;
-    cur.hidden = dot.hidden = false;
-    cur.style.left = dot.style.left = left;
-    dot.style.top = `${((90 - (days[i].cost / max) * 80) / 96) * 100}%`;
-  }
-  const hideSparkCursor = () => document.querySelectorAll('.spark-cursor, .spark-hover').forEach((el) => (el.hidden = true));
-  document.addEventListener('click', (ev) => {
-    const spark = snap && ev.target.closest && ev.target.closest('[data-spark]');
-    if (!spark || !window.Sheet) return;
-    const { d } = sparkDay(spark, ev);
-    if (d && d.requests > 0) window.Sheet.open(`day:${d.t}`);
-  });
   document.addEventListener('mousemove', (ev) => {
     if (!snap || !ev.target.closest) return (tip.hidden = true);
-    const spark = ev.target.closest('[data-spark]');
-    if (!spark) hideSparkCursor();
-    if (spark) {
-      const { i, d, days } = sparkDay(spark, ev);
-      sparkCursor(spark, i, days);
-      tip.innerHTML = `<div class="tt-title">${esc(new Date(d.t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }))}</div>
-        <div class="tt-row"><b>Cost</b><span><b>${usd(d.cost)}</b></span></div><div class="tt-row">Replies<span>${full(d.requests)}</span></div><div class="tt-row">Tokens<span>${compact(d.total)}</span></div>`;
-      return place(ev);
-    }
     const col = ev.target.closest('.col');
     const host = col && col.closest('[data-chart]');
     if (!col || !host) return (tip.hidden = true);

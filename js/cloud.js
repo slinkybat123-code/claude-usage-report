@@ -2,7 +2,7 @@
 // Config comes from ../config.js (window.FIREBASE_CONFIG; window.FIREBASE_EMULATOR when testing locally).
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-app.js';
 import {
-  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
+  getAuth, initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult,
   signOut as firebaseSignOut, connectAuthEmulator,
 } from 'https://www.gstatic.com/firebasejs/13.2.0/firebase-auth.js';
 import {
@@ -22,7 +22,26 @@ if (!config || !config.apiKey) {
   throw new Error('No FIREBASE_CONFIG');
 }
 export const app = initializeApp(config);
-export const auth = getAuth(app);
+/**
+ * Inside the Limit app (Android 3 and later) the page has no Google sign-in of its own: Google
+ * doesn't allow it in an app's built-in browser. You sign in once on app/signin/ in a real browser
+ * tab, the app keeps that session and hands it to every page here (LimitApp.session()).
+ */
+export const IN_APP = typeof window.LimitApp === 'object' && navigator.userAgent.indexOf('LimitApp/3') >= 0;
+function appAuth() {
+  const key = `firebase:authUser:${config.apiKey}:[DEFAULT]`;
+  try {
+    const raw = window.LimitApp.session();
+    const got = raw ? JSON.parse(raw) : null;
+    const have = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!got) localStorage.removeItem(key);
+    else if (!have || have.uid !== got.uid) localStorage.setItem(key, raw);
+  } catch (e) {
+    console.warn('app session', e);
+  }
+  return initializeAuth(app, { persistence: browserLocalPersistence, popupRedirectResolver: browserPopupRedirectResolver });
+}
+export const auth = IN_APP ? appAuth() : getAuth(app);
 export const db = getFirestore(app);
 const emulator = window.FIREBASE_EMULATOR;
 if (emulator) {
@@ -57,12 +76,17 @@ export const redirectResult = () => getRedirectResult(auth).catch(() => null);
 
 export async function signOut() {
   await firebaseSignOut(auth);
+  if (IN_APP) return window.LimitApp.signedOut();
   location.href = ROOT.href;
 }
 
 /** For every page but the sign-in page: the signed-in Google user, or off to sign in (and back here after). */
 export async function requireUser(current) {
   const user = await ready;
+  if ((!user || user.isAnonymous) && IN_APP) {
+    window.LimitApp.signIn(); // the app opens app/signin/ and comes back here
+    return new Promise(() => {});
+  }
   if (!user || user.isAnonymous) {
     const next = location.pathname + location.search + location.hash;
     location.replace(`${ROOT.href}?next=${encodeURIComponent(next)}`);

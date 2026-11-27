@@ -308,3 +308,27 @@ dialog[open]::backdrop { animation: fade 0.25s both; }
   .wrap > *, body > main > *, dialog[open], dialog[open]::backdrop { animation: none !important; }
   .card.friend:hover, .download:hover { transform: none; }
 }
+
+/* ---------- 3.0: signing the phone app in (app/signin/), shown in a browser tab over the app ---------- */
+.app-signin { min-height: 100svh; display: flex; flex-direction: column; justify-content: center; gap: 22px; max-width: 440px; margin: 0 auto; padding: 32px 22px calc(28px + env(safe-area-inset-bottom)); }
+.app-signin .mark.big { animation: site-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.app-signin h1 { font-size: clamp(30px, 8vw, 40px); line-height: 1.08; letter-spacing: -0.03em; margin: 0 0 10px; font-weight: 750; }
+.app-signin .lede { font-size: 17px; color: var(--ink-2); margin: 0 0 24px; }
+.app-signin .fine { color: var(--muted); font-size: 13px; margin: 0; }
+.as-step { display: grid; justify-items: start; }
+.as-step.in > * { animation: site-rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.as-step.in > *:nth-child(2) { animation-delay: 0.06s; }
+.as-step.in > *:nth-child(3) { animation-delay: 0.12s; }
+.as-step.in > *:nth-child(4) { animation-delay: 0.18s; }
+.as-step .google-btn, .as-go { width: 100%; justify-content: center; min-height: 54px; font-size: 16px; border-radius: 14px; }
+.as-go { display: inline-flex; align-items: center; text-decoration: none; }
+.as-who { display: flex; align-items: center; gap: 12px; padding: 14px; margin: 0 0 18px; width: 100%; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--ring); }
+.as-who div { display: grid; min-width: 0; }
+.as-who span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.as-other { margin-top: 10px; width: 100%; min-height: 48px; background: transparent; border: 0; color: var(--link); font-weight: 600; }
+.app-signin .err { color: var(--critical-text); font-size: 14px; margin: 14px 0 0; }
+
+/* ---------- 3.0: inside the Limit app (html.phone): the app has its own tabs, so no site menu or footer ---------- */
+html.phone .site-nav, html.phone .pub-nav, html.phone .site-foot { display: none !important; }
+html.phone .page { padding-top: 14px; }
+html.phone body { overscroll-behavior-y: none; }

@@ -4,6 +4,7 @@ import {
   serverTimestamp, deleteField, esc, ago, millis, nameOf, problem, fillDownloads, ROOT,
 } from './cloud.js';
 import { deleteAccount } from './account.js';
+import { approveLink } from './link.js';
 
 const user = await requireUser('computers');
 fillDownloads();
@@ -55,10 +56,7 @@ async function showRequest(code) {
   $('do-link').addEventListener('click', async () => {
     $('do-link').disabled = true;
     try {
-      const b = writeBatch(db);
-      b.update(doc(db, 'links', code), { owner: user.uid, ownerName: nameOf(user) });
-      b.set(doc(db, 'devices', link.device), { owner: user.uid, kind: link.kind || 'pc', name: link.name || 'Computer', platform: link.platform || '', link: code, linkedAt: serverTimestamp() });
-      await b.commit();
+      await approveLink(user, code, link);
       history.replaceState(null, '', location.pathname);
       approveBox(phone
         ? `<h2>Done: ${esc(link.name || 'your phone')} is added</h2><p class="desc">Go back to the Limit app. It moves on by itself in a few seconds.</p>`

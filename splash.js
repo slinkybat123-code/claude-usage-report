@@ -6,7 +6,10 @@
 (function () {
   'use strict';
   var html = document.documentElement;
-  if (html.classList.contains('shell') || window.LimitSplash) return; // the phone app has its own
+  // Limit app 3 (html.phone) draws the logo itself; the page then waits for the app to show it
+  // (limit-app-shown) so its numbers count up where you can see them. Older app versions skip all this.
+  var phone = html.classList.contains('phone') || navigator.userAgent.indexOf('LimitApp/3') >= 0;
+  if ((html.classList.contains('shell') && !phone) || window.LimitSplash) return;
   var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   var seen = false;
   try {
@@ -15,7 +18,7 @@
     seen = sessionStorage.getItem('limit-splash') === '1';
     sessionStorage.setItem('limit-splash', '1');
   } catch (e) { /* private window: show it every time */ }
-  var full = !seen && !calm;
+  var full = !seen && !calm && !phone;
   var api = (window.LimitSplash = { done: false });
 
   var css = document.createElement('style');
@@ -52,8 +55,10 @@
 
   var t0 = Date.now();
   var MIN = full ? 1150 : 0; // long enough to see the mark draw
-  var MAX = full ? 2800 : 1200; // never hold the page longer than this
-  var wait = full && html.hasAttribute('data-wait-ready');
+  var MAX = full ? 2800 : phone ? 4000 : 1200; // never hold the page longer than this
+  var wait = (full || phone) && html.hasAttribute('data-wait-ready');
+  var shown = !phone || window.__limitAppShown === true;
+  window.addEventListener('limit-app-shown', function () { shown = true; check(); });
   var parsed = false;
   var ready = false;
 
@@ -70,7 +75,7 @@
     }, 800);
   }
   function check() {
-    if (parsed && (ready || !wait)) setTimeout(finish, Math.max(0, MIN - (Date.now() - t0)));
+    if (parsed && shown && (ready || !wait)) setTimeout(finish, Math.max(0, MIN - (Date.now() - t0)));
   }
   window.addEventListener('limit-ready', function () { ready = true; check(); });
   if (document.readyState !== 'loading') parsed = true;
